@@ -15,8 +15,12 @@ import type {
   ManualComp,
   Comp,
   PurchaseEvidence,
+  PropertyCondition,
+  PropertyCharacteristics,
 } from '../types';
 import { adjustToToday } from '../adapters/hpi';
+import { fetchFloodZone } from '../adapters/flood';
+import type { FloodZoneResult } from '../adapters/flood';
 import { geocodeAddress } from '../adapters/census';
 import {
   fetchCollinSubject,
@@ -43,6 +47,12 @@ export interface AnalysisResult {
   purchase: PurchaseEvidence | null;
   /** Why RentCast was skipped, if a key was given but the call failed. */
   rentcastError: string | null;
+  /** FEMA flood zone for this property (null if lat/lng unavailable or API failed). */
+  floodZone: FloodZoneResult | null;
+  /** Owner-documented condition issues. */
+  condition: PropertyCondition | null;
+  /** Owner-reported discrepancies in the CAD record. */
+  characteristics: PropertyCharacteristics | null;
   verdict: Verdict;
 }
 
@@ -56,6 +66,8 @@ export interface RunOptions {
   repairEstimateTotal?: number;
   recentPurchasePrice?: number;
   recentPurchaseDate?: string;
+  condition?: PropertyCondition | null;
+  characteristics?: PropertyCharacteristics | null;
   onStep?: (s: AppStep) => void;
 }
 
@@ -139,11 +151,29 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
     };
   }
 
+  // Flood zone — fire-and-forget after geocoder provides lat/lng; silently null if unavailable
+  const floodZone = subject.lat && subject.lng
+    ? await fetchFloodZone(subject.lat, subject.lng).catch(() => null)
+    : null;
+
+  // Total repair estimate: explicit total OR sum of condition categories
+  const conditionTotal = opts.condition
+    ? opts.condition.foundation + opts.condition.roof + opts.condition.hvac +
+      opts.condition.plumbingElectrical + opts.condition.other
+    : 0;
+  const repairTotal = (opts.repairEstimateTotal ?? 0) + conditionTotal;
+
   const verdict = computeVerdict(subject, capFloor, equity, market, {
-    repairEstimateTotal: opts.repairEstimateTotal,
+    repairEstimateTotal: repairTotal > 0 ? repairTotal : undefined,
     recentPurchasePrice: purchase ? purchase.marketValue : undefined,
     recentPurchaseDate: opts.recentPurchaseDate,
   });
   onStep?.('results');
-  return { geocode, subject, capFloor, equity, market, purchase, rentcastError, verdict };
+  return {
+    geocode, subject, capFloor, equity, market, purchase, rentcastError,
+    floodZone,
+    condition: opts.condition ?? null,
+    characteristics: opts.characteristics ?? null,
+    verdict,
+  };
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { County, ManualComp, AppStep } from './types';
+import type { County, ManualComp, AppStep, PropertyCondition, PropertyCharacteristics } from './types';
 import { runAnalysis } from './engine/run';
 import type { AnalysisResult } from './engine/run';
 import { suggestAddresses, type AddressSuggestion } from './adapters/suggest';
@@ -46,6 +46,12 @@ function App() {
   const [purchasePrice, setPurchasePrice] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
   const [repairTotal, setRepairTotal] = useState('');
+  const [condition, setCondition] = useState<PropertyCondition>({
+    foundation: 0, roof: 0, hvac: 0, plumbingElectrical: 0, other: 0, notes: '',
+  });
+  const [characteristics, setCharacteristics] = useState<PropertyCharacteristics>({
+    actualSqft: null, wrongQualityClass: false, characteristicsNotes: '',
+  });
 
   const busy = step === 'geocoding' || step === 'loading_property' || step === 'loading_comps';
 
@@ -79,6 +85,12 @@ function App() {
         setAddress(target.label);
       }
 
+      const conditionTotal = condition.foundation + condition.roof + condition.hvac +
+        condition.plumbingElectrical + condition.other;
+      const hasCondition = conditionTotal > 0 || condition.notes.trim().length > 0;
+      const hasCharacteristics = characteristics.actualSqft != null ||
+        characteristics.wrongQualityClass || characteristics.characteristicsNotes.trim().length > 0;
+
       const extras = {
         county: target.county as County,
         account: target.account,
@@ -87,6 +99,8 @@ function App() {
         recentPurchasePrice: purchasePrice ? Number(purchasePrice) : undefined,
         recentPurchaseDate: purchaseDate || undefined,
         repairEstimateTotal: repairTotal ? Number(repairTotal) : undefined,
+        condition: hasCondition ? condition : null,
+        characteristics: hasCharacteristics ? characteristics : null,
       };
 
       const r = await runAnalysis({
@@ -201,6 +215,10 @@ function App() {
                 setPurchaseDate={setPurchaseDate}
                 repairTotal={repairTotal}
                 setRepairTotal={setRepairTotal}
+                condition={condition}
+                setCondition={setCondition}
+                characteristics={characteristics}
+                setCharacteristics={setCharacteristics}
               />
             )}
 
@@ -248,6 +266,7 @@ function App() {
           <>
             <HowItWorks />
             <RealExamples />
+            <OtherGrounds />
           </>
         )}
         <footer className="mt-12 border-t border-slate-200 pt-6 text-center text-xs text-slate-400">
@@ -429,7 +448,7 @@ function Results({
   result: AnalysisResult;
   onDownload: (kind: 'board' | 'personal') => void;
 }) {
-  const { subject, capFloor, equity, market, purchase, rentcastError, verdict } = result;
+  const { subject, capFloor, equity, market, purchase, rentcastError, floodZone, condition, characteristics, verdict } = result;
   const isProtest = verdict.code === 'protest';
   const tone = isProtest
     ? 'border-emerald-200 bg-emerald-50'
@@ -614,6 +633,118 @@ function Results({
         <Note tone="warn">
           RentCast was skipped: {rentcastError}
         </Note>
+      )}
+
+      {/* flood zone */}
+      {floodZone && (
+        <section className={`rounded-2xl border p-6 shadow-sm ${
+          floodZone.sfha
+            ? 'border-red-200 bg-red-50'
+            : 'border-slate-200 bg-white'
+        }`}>
+          <h3 className="font-semibold text-slate-900">FEMA flood zone</h3>
+          <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3">
+            <Stat label="Zone" value={floodZone.zone} accent={floodZone.sfha} />
+            <Stat label="High-risk area" value={floodZone.sfha ? 'Yes (SFHA)' : 'No'} />
+          </div>
+          <p className="mt-3 text-xs text-slate-500">{floodZone.description}</p>
+          {floodZone.sfha && (
+            <Note tone="warn">
+              This property is in a Special Flood Hazard Area (Zone {floodZone.zone}). Mandatory
+              flood insurance typically adds $1,500–$4,000/yr in holding costs and buyers
+              discount flood-zone homes 5–15% vs comparable non-flood properties. This
+              supports a §41.43(a) market-value reduction. Include the{' '}
+              <a
+                href={floodZone.firmPanelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                FEMA FIRM panel map
+              </a>{' '}
+              as an exhibit.
+            </Note>
+          )}
+          {!floodZone.sfha && (
+            <p className="mt-2 text-xs text-slate-400">
+              Minimal flood hazard — no flood-zone value impact.{' '}
+              <a
+                href={floodZone.firmPanelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                View FIRM map
+              </a>
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* condition + characteristics */}
+      {(condition || characteristics) && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="font-semibold text-slate-900">Additional protest grounds</h3>
+          {condition && (condition.foundation + condition.roof + condition.hvac +
+            condition.plumbingElectrical + condition.other) > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Condition / deferred maintenance
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {condition.foundation > 0 && (
+                  <Stat label="Foundation" value={fmtUSD(condition.foundation)} />
+                )}
+                {condition.roof > 0 && <Stat label="Roof" value={fmtUSD(condition.roof)} />}
+                {condition.hvac > 0 && <Stat label="HVAC" value={fmtUSD(condition.hvac)} />}
+                {condition.plumbingElectrical > 0 && (
+                  <Stat label="Plumbing / Elec." value={fmtUSD(condition.plumbingElectrical)} />
+                )}
+                {condition.other > 0 && <Stat label="Other" value={fmtUSD(condition.other)} />}
+                <Stat
+                  label="Total deduction"
+                  value={fmtUSD(condition.foundation + condition.roof + condition.hvac +
+                    condition.plumbingElectrical + condition.other)}
+                  accent
+                />
+              </div>
+              {condition.notes && (
+                <p className="mt-2 text-xs text-slate-500">{condition.notes}</p>
+              )}
+            </div>
+          )}
+          {characteristics && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                CAD record discrepancies
+              </p>
+              {characteristics.actualSqft != null && (
+                <p className="mt-2 text-sm text-slate-700">
+                  <span className="font-medium">Square footage:</span> CAD shows{' '}
+                  {fmtNum(subject.livingAreaSqft)} sqft — you report{' '}
+                  {fmtNum(characteristics.actualSqft)} sqft
+                  {characteristics.actualSqft < subject.livingAreaSqft && (
+                    <span className="ml-1 text-emerald-700 font-medium">
+                      ({fmtNum(subject.livingAreaSqft - characteristics.actualSqft)} sqft over-count
+                      in the record — strong grounds for reduction)
+                    </span>
+                  )}
+                </p>
+              )}
+              {characteristics.wrongQualityClass && (
+                <p className="mt-1 text-sm text-slate-700">
+                  <span className="font-medium">Quality class:</span> CAD shows{' '}
+                  {subject.qualityClass} — you believe this is incorrect.
+                </p>
+              )}
+              {characteristics.characteristicsNotes && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {characteristics.characteristicsNotes}
+                </p>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       {/* how to file */}
@@ -861,6 +992,189 @@ function RealExamples() {
   );
 }
 
+// ─── Other grounds landing section ─────────────────────────────────────────────
+
+const GROUNDS = [
+  {
+    icon: '⚖️',
+    label: 'Unequal Appraisal',
+    badge: 'Primary',
+    badgeColor: 'bg-emerald-100 text-emerald-700',
+    statute: 'Tex. Tax Code §41.43(b)(3)',
+    body:
+      'The CAD must appraise your home at the same $/sqft ratio it uses for comparable homes in the same neighborhood. If your ratio is higher than the median, you are over-appraised relative to your neighbors — and you can win without ever proving what the house would sell for. This is the most reliably winnable ground: all the data comes directly from the CAD\'s own records.',
+    bullets: [
+      'No sale required — the argument is based purely on equity among neighbors',
+      'Engine computes your rank: if you are above the median, you have a case',
+      'The ARB cannot raise anyone else\'s value to make the math work — they can only lower yours',
+    ],
+    links: [],
+  },
+  {
+    icon: '🏷️',
+    label: 'Over Market Value',
+    badge: 'Strong with evidence',
+    badgeColor: 'bg-sky-100 text-sky-700',
+    statute: 'Tex. Tax Code §41.43(a)',
+    body:
+      'If you can show the CAD appraised your home above what a willing buyer would pay in today\'s market, you win on market-value grounds. The strongest evidence is a recent arms-length purchase price. Older purchases can be aged to today using the FHFA House Price Index (public, free). Manual comps from recent nearby sales also work.',
+    bullets: [
+      'Recent purchase price — single strongest piece of evidence; file within 2 years',
+      'FHFA House Price Index — ages an older purchase to today\'s market (Dallas-Plano-Irving CBSA)',
+      'Comparable sales — nearby homes sold within 12 months; attach MLS printouts',
+      'AVM estimates (Zillow / Redfin) — supporting evidence, not primary',
+      'Texas A&M Real Estate Center market reports (free, public)',
+    ],
+    links: [
+      { label: 'FHFA HPI data (public)', url: 'https://www.fhfa.gov/data/hpi' },
+      { label: 'TX A&M Real Estate Center', url: 'https://trerc.tamu.edu/' },
+    ],
+  },
+  {
+    icon: '🌊',
+    label: 'FEMA Flood Zone (SFHA)',
+    badge: 'Market value support',
+    badgeColor: 'bg-blue-100 text-blue-700',
+    statute: 'Tex. Tax Code §41.43(a) — market factor',
+    body:
+      'Properties in a FEMA Special Flood Hazard Area (Zone AE/A/AH/AO) must carry mandatory flood insurance ($1,500–$4,000+/yr). Research shows SFHA homes sell 5–15% below comparable non-flood properties because of the insurance cost and perceived risk. Enter your address above and the engine will automatically look up your flood zone via FEMA\'s public API.',
+    bullets: [
+      'Mandatory flood insurance reduces buyer purchasing power',
+      'Attach the FEMA FIRM map panel as an exhibit (link in results)',
+      'Cite the discount percentage and show comparable non-SFHA sales nearby',
+    ],
+    links: [
+      { label: 'FEMA Flood Map Service Center', url: 'https://msc.fema.gov/portal/home' },
+    ],
+  },
+  {
+    icon: '📐',
+    label: 'Wrong CAD Record (sqft / quality class)',
+    badge: 'Often overlooked',
+    badgeColor: 'bg-amber-100 text-amber-700',
+    statute: 'Tex. Tax Code §41.41(a)(1) — incorrect appraisal',
+    body:
+      'If the CAD record shows the wrong square footage or a higher quality class than your home actually is, the $/sqft ratio is inflated before the comparison even starts. You can fix this as a separate ground — independent of the equity or market-value arguments. The ARB can reduce the value and correct the record.',
+    bullets: [
+      'Measure your actual living area (exclude garage, porches, unfinished spaces)',
+      'Bring a floor plan, prior appraisal, or Realist/Zillow record showing correct sqft',
+      'Check the CAD quality class (A, B, C, D, F) on your county\'s property search',
+      'A one-class downgrade typically reduces value by 10–20% at the district level',
+    ],
+    links: [
+      { label: 'Collin CAD property search', url: 'https://www.collincountytx.gov/appraisal-district/property-search' },
+      { label: 'Denton CAD property search', url: 'https://www.dentoncad.com/property-search' },
+    ],
+  },
+  {
+    icon: '🔨',
+    label: 'Deferred Maintenance / Property Condition',
+    badge: 'Supports §41.43(a)',
+    badgeColor: 'bg-rose-100 text-rose-700',
+    statute: 'Tex. Tax Code §41.43(a) — condition adjustment',
+    body:
+      'Major repairs that a buyer would need to make immediately reduce the effective market value of the home. Foundation issues, roof replacement, failing HVAC, and outdated electrical are the most persuasive. The ARB wants to see contractor bids — not estimates — for each category. Enter your repair estimates in the Advanced Options panel above.',
+    bullets: [
+      'Foundation: get a structural engineer or foundation company bid',
+      'Roof: at least two roofing contractor quotes',
+      'HVAC: age + condition report from an HVAC technician',
+      'Do NOT include routine maintenance the CAD already factors in (paint, carpet)',
+      'Total documented repairs reduce the indicated market value dollar-for-dollar',
+    ],
+    links: [],
+  },
+  {
+    icon: '📋',
+    label: 'Request CAD Evidence Under Texas PIA',
+    badge: 'Advanced',
+    badgeColor: 'bg-slate-100 text-slate-600',
+    statute: 'Tex. Gov\'t Code §552 — Public Information Act',
+    body:
+      'You can request the comparable sales data the CAD\'s own appraiser used to set your value — the exact comps they ran. Send a written PIA request to the CAD; they must respond within 10 business days. If their own comps show you are over market, that\'s your strongest exhibit.',
+    bullets: [
+      'Email the CAD records department: "I request all comparable sales data used to appraise account [your account]"',
+      'Ask for the sales grid / CAMA model output if available',
+      'Attach the CAD\'s own comps as Exhibit A in your board packet',
+      'Texas Open Records Hotline: 512-478-6736 (if the CAD refuses)',
+    ],
+    links: [
+      { label: 'Texas AG Open Records portal', url: 'https://www.texasattorneygeneral.gov/open-government/governmental-bodies/open-records-requests' },
+    ],
+  },
+];
+
+function OtherGrounds() {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <section className="mt-14">
+      <div className="mb-1 flex items-center gap-3">
+        <h2 className="text-xl font-bold text-slate-900">All grounds for protest — and how to use them</h2>
+      </div>
+      <p className="mb-6 text-sm text-slate-500">
+        Texas law gives property owners multiple independent grounds to reduce an appraised value.
+        Each ground below explains the legal basis, what evidence you need, and where to get it —
+        all from public, free sources.
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {GROUNDS.map((g, i) => (
+          <div
+            key={g.label}
+            className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm"
+          >
+            <button
+              className="flex w-full items-start gap-3 px-5 py-4 text-left"
+              onClick={() => setOpen(open === i ? null : i)}
+            >
+              <span className="mt-0.5 text-xl" role="img" aria-label="">{g.icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900">{g.label}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${g.badgeColor}`}>
+                    {g.badge}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-400">{g.statute}</p>
+              </div>
+              <span className="mt-1 shrink-0 text-slate-400">{open === i ? '▲' : '▼'}</span>
+            </button>
+            {open === i && (
+              <div className="border-t border-slate-100 px-5 pb-5 pt-3">
+                <p className="mb-3 text-sm leading-relaxed text-slate-700">{g.body}</p>
+                <ul className="mb-3 space-y-1.5">
+                  {g.bullets.map((b) => (
+                    <li key={b} className="flex gap-2 text-xs text-slate-600">
+                      <span className="mt-0.5 shrink-0 text-emerald-500">✓</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+                {g.links.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {g.links.map((l) => (
+                      <a
+                        key={l.label}
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        {l.label} ↗
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="mt-6 text-xs text-slate-400">
+        The unequal-appraisal ground (§41.43(b)(3)) is automatically computed when you enter your address above. Use the Advanced Options panel to add flood zone, condition, and characteristics evidence.
+      </p>
+    </section>
+  );
+}
+
 // ─── Small presentational pieces ───────────────────────────────────────────────
 
 function DownloadButton({
@@ -1022,11 +1336,21 @@ function AdvancedPanel(props: {
   setPurchaseDate: (v: string) => void;
   repairTotal: string;
   setRepairTotal: (v: string) => void;
+  condition: PropertyCondition;
+  setCondition: (v: PropertyCondition) => void;
+  characteristics: PropertyCharacteristics;
+  setCharacteristics: (v: PropertyCharacteristics) => void;
 }) {
   const inp =
     'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100';
+  const conditionTotal =
+    props.condition.foundation + props.condition.roof + props.condition.hvac +
+    props.condition.plumbingElectrical + props.condition.other;
+
   return (
-    <div className="mt-4 space-y-5 rounded-xl border border-slate-200 bg-slate-50 p-5">
+    <div className="mt-4 space-y-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
+
+      {/* ── Purchase price ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-sm font-semibold text-slate-700">
@@ -1058,15 +1382,15 @@ function AdvancedPanel(props: {
             }
             return (
               <p className="mt-1 text-xs text-slate-500">
-                A recent arms-length sale is the strongest market evidence. Add the date and we age it
-                to today with the public FHFA price index.
+                A recent arms-length sale is the strongest market evidence. Add the date and we
+                age it to today with the public FHFA price index.
               </p>
             );
           })()}
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700">
-            Documented repair estimates total
+            Other repair estimate total
           </label>
           <input
             type="number"
@@ -1076,11 +1400,136 @@ function AdvancedPanel(props: {
             className={`mt-1 ${inp}`}
           />
           <p className="mt-1 text-xs text-slate-500">
-            Contractor bids for foundation, roof, HVAC, etc. Deducted from the requested value.
+            Use if you have a single lump-sum estimate. Or itemize below.
           </p>
         </div>
       </div>
 
+      {/* ── Property condition ─────────────────────────────────── */}
+      <div>
+        <label className="block text-sm font-semibold text-slate-700">
+          Property condition issues
+        </label>
+        <p className="mt-1 text-xs text-slate-500">
+          Enter contractor bids or estimates for known defects. These reduce the market value we
+          argue and are listed as supporting evidence in your board packet.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {(
+            [
+              { key: 'foundation', label: 'Foundation' },
+              { key: 'roof',       label: 'Roof' },
+              { key: 'hvac',       label: 'HVAC' },
+              { key: 'plumbingElectrical', label: 'Plumbing / Elec.' },
+            ] as { key: keyof PropertyCondition; label: string }[]
+          ).map(({ key, label }) => (
+            <div key={key}>
+              <label className="text-[11px] font-medium text-slate-500">{label}</label>
+              <input
+                type="number"
+                min="0"
+                value={(props.condition[key] as number) || ''}
+                onChange={(e) =>
+                  props.setCondition({ ...props.condition, [key]: Number(e.target.value) })
+                }
+                placeholder="$0"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-slate-500">Other</label>
+            <input
+              type="number"
+              min="0"
+              value={props.condition.other || ''}
+              onChange={(e) =>
+                props.setCondition({ ...props.condition, other: Number(e.target.value) })
+              }
+              placeholder="$0"
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          {conditionTotal > 0 && (
+            <div className="flex items-end pb-1.5">
+              <span className="text-sm font-semibold text-emerald-700">
+                Total: {fmtUSD(conditionTotal)}
+              </span>
+            </div>
+          )}
+        </div>
+        <input
+          type="text"
+          value={props.condition.notes}
+          onChange={(e) => props.setCondition({ ...props.condition, notes: e.target.value })}
+          placeholder="Notes (e.g. 'foundation quote from ABC Contractors, June 2025')"
+          className={`mt-2 ${inp}`}
+        />
+      </div>
+
+      {/* ── Property characteristics mismatch ─────────────────── */}
+      <div>
+        <label className="block text-sm font-semibold text-slate-700">
+          CAD record discrepancies
+        </label>
+        <p className="mt-1 text-xs text-slate-500">
+          Wrong square footage in the CAD record is one of the most common and winnable
+          protest grounds — it directly changes the $/sqft math. Note any discrepancies here
+          and we&apos;ll include them as an additional argument.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-[11px] font-medium text-slate-500">
+              Your actual living area (sqft), if different from the CAD record
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={props.characteristics.actualSqft ?? ''}
+              onChange={(e) =>
+                props.setCharacteristics({
+                  ...props.characteristics,
+                  actualSqft: e.target.value ? Number(e.target.value) : null,
+                })
+              }
+              placeholder="Leave blank if correct"
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="flex items-end pb-1.5">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={props.characteristics.wrongQualityClass}
+                onChange={(e) =>
+                  props.setCharacteristics({
+                    ...props.characteristics,
+                    wrongQualityClass: e.target.checked,
+                  })
+                }
+                className="h-4 w-4 rounded border-slate-300 accent-emerald-600"
+              />
+              Quality class / grade is wrong
+            </label>
+          </div>
+        </div>
+        <input
+          type="text"
+          value={props.characteristics.characteristicsNotes}
+          onChange={(e) =>
+            props.setCharacteristics({
+              ...props.characteristics,
+              characteristicsNotes: e.target.value,
+            })
+          }
+          placeholder="Describe what is wrong (e.g. 'CAD shows 4-car garage, we have 2')"
+          className={`mt-2 ${inp}`}
+        />
+      </div>
+
+      {/* ── Manual comps ──────────────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-slate-700">Recent comparable sales</label>
@@ -1093,8 +1542,8 @@ function AdvancedPanel(props: {
           </button>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Actual sold prices on your street (a realtor friend can pull these from MLS). Texas hides
-          sale prices, so these are the strongest market evidence you can bring.
+          Actual sold prices on your street (a realtor friend can pull these from MLS). Texas
+          hides sale prices, so these are the strongest market evidence you can bring.
         </p>
         {props.manualComps.length > 0 && (
           <div className="mt-2 grid grid-cols-12 gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -1165,8 +1614,8 @@ function AdvancedPanel(props: {
           className={`mt-2 ${inp}`}
         />
         <p className="mt-1 text-xs text-slate-500">
-          Optional automated valuation. May be blocked by the browser (CORS); manual comps are the
-          reliable fallback.
+          Optional automated valuation. May be blocked by the browser (CORS); manual comps are
+          the reliable fallback.
         </p>
       </details>
     </div>

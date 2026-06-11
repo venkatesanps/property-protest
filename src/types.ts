@@ -142,6 +142,34 @@ export interface ManualComp {
   notes: string;
 }
 
+/**
+ * Property condition issues the owner documents.
+ * Each category holds a dollar estimate; zero means "not applicable."
+ * Used for §41.43(a) market-value reduction and condition talking points.
+ */
+export interface PropertyCondition {
+  foundation: number;
+  roof: number;
+  hvac: number;
+  plumbingElectrical: number;
+  other: number;
+  /** Free-text note (e.g. "foundation crack estimate from ABC Co.") */
+  notes: string;
+}
+
+/**
+ * Discrepancies between what the CAD record says and what the owner knows.
+ * Wrong sqft is especially common and directly changes the §41.43 argument.
+ */
+export interface PropertyCharacteristics {
+  /** Owner's measured/actual living area, if different from the CAD record. */
+  actualSqft: number | null;
+  /** True if owner disputes the quality class shown on the CAD record. */
+  wrongQualityClass: boolean;
+  /** Free-text description of what is wrong with the CAD record. */
+  characteristicsNotes: string;
+}
+
 export type VerdictCode = 'protest' | 'borderline' | 'dont_protest' | 'incomplete';
 
 /** Final recommendation combining cap floor + equity (+ optional market). */

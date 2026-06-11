@@ -113,6 +113,24 @@ function derive(result: AnalysisResult) {
       `Note: your homestead 10% cap already holds your taxable value at ${fmtUSD(floor)}. A reduction only lowers your bill if your argued value drops below that floor.`
     );
   }
+  if (result.floodZone?.sfha) {
+    points.push(
+      `This property is in FEMA flood zone ${result.floodZone.zone} (Special Flood Hazard Area). Mandatory flood insurance adds $1,500-$4,000+/year in holding costs and buyers typically discount SFHA homes 5-15% below comparable non-flood properties. Attach the FEMA FIRM map panel as an exhibit.`
+    );
+  }
+  if (result.characteristics) {
+    const ch = result.characteristics;
+    if (ch.actualSqft != null && ch.actualSqft < subject.livingAreaSqft) {
+      points.push(
+        `The CAD record shows ${fmtNum(subject.livingAreaSqft)} sqft, but the actual living area is ${fmtNum(ch.actualSqft)} sqft - an overstatement of ${fmtNum(subject.livingAreaSqft - ch.actualSqft)} sqft. The district appraised your home at a higher $/sqft ratio than it should have. Bring a floor plan, tax form, or appraisal as exhibit.`
+      );
+    }
+    if (ch.wrongQualityClass) {
+      points.push(
+        `The CAD quality class (${subject.qualityClass}) is disputed. A lower class produces a lower value per sqft across the neighborhood and is independent grounds for reduction.`
+      );
+    }
+  }
 
   return { floor, requested, opening, reduction, savings, points };
 }
@@ -308,6 +326,77 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
         size: 9,
         color: GRAY,
       });
+    }
+  }
+
+  // ── Flood zone ──
+  if (result.floodZone) {
+    const fz = result.floodZone;
+    b.heading('FEMA Flood Zone');
+    b.kv('Zone', fz.zone, fz.sfha ? EMERALD : undefined);
+    b.kv('Special Flood Hazard Area', fz.sfha ? 'YES' : 'No', fz.sfha ? EMERALD : undefined);
+    b.wrap(fz.description, { size: 9.5 });
+    if (fz.sfha) {
+      b.wrap(
+        'Properties in an SFHA require mandatory flood insurance ($1,500-$4,000+/yr), which ' +
+        'reduces buyer purchasing power and results in 5-15% price discounts versus comparable ' +
+        'non-flood properties. This supports a market-value reduction under Tex. Tax Code 41.43(a). ' +
+        'Attach the FEMA FIRM map panel as Exhibit.',
+        { size: 9, color: GRAY }
+      );
+    }
+  }
+
+  // ── Condition / deferred maintenance ──
+  if (result.condition) {
+    const c = result.condition;
+    const total = c.foundation + c.roof + c.hvac + c.plumbingElectrical + c.other;
+    if (total > 0) {
+      b.heading('Property Condition - Deferred Maintenance');
+      b.wrap(
+        'Documented repair estimates reduce the effective market value of the property. ' +
+        'Contractor bids should be attached as exhibits.',
+        { size: 9.5 }
+      );
+      if (c.foundation > 0) b.kv('Foundation repair estimate', fmtUSD(c.foundation));
+      if (c.roof > 0)       b.kv('Roof repair estimate', fmtUSD(c.roof));
+      if (c.hvac > 0)       b.kv('HVAC replacement estimate', fmtUSD(c.hvac));
+      if (c.plumbingElectrical > 0)
+        b.kv('Plumbing / electrical estimate', fmtUSD(c.plumbingElectrical));
+      if (c.other > 0)      b.kv('Other repairs', fmtUSD(c.other));
+      b.kv('Total condition deduction', fmtUSD(total), NAVY);
+      if (c.notes) b.wrap(c.notes, { size: 9, color: GRAY });
+    }
+  }
+
+  // ── CAD record discrepancies ──
+  if (result.characteristics) {
+    const ch = result.characteristics;
+    const hasAnything = ch.actualSqft != null || ch.wrongQualityClass ||
+      ch.characteristicsNotes.trim().length > 0;
+    if (hasAnything) {
+      b.heading('CAD Record Discrepancies');
+      b.wrap(
+        'The owner disputes the following characteristics in the CAD record. An incorrect ' +
+        'square footage directly changes the per-sqft appraisal ratio and is independent ' +
+        'grounds for reduction.',
+        { size: 9.5 }
+      );
+      if (ch.actualSqft != null) {
+        b.kv('CAD living area', fmtNum(subject.livingAreaSqft) + ' sqft');
+        b.kv('Owner-reported living area', fmtNum(ch.actualSqft) + ' sqft', NAVY);
+        if (ch.actualSqft < subject.livingAreaSqft) {
+          b.wrap(
+            `CAD overstates living area by ${fmtNum(subject.livingAreaSqft - ch.actualSqft)} sqft. ` +
+            'Provide a floor plan, tax form, or appraisal as exhibit.',
+            { size: 9, color: GRAY }
+          );
+        }
+      }
+      if (ch.wrongQualityClass) {
+        b.kv('Quality class', `CAD shows ${subject.qualityClass} - owner disputes this classification`);
+      }
+      if (ch.characteristicsNotes) b.wrap(ch.characteristicsNotes, { size: 9, color: GRAY });
     }
   }
 
