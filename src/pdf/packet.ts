@@ -1,300 +1,386 @@
 /**
- * Evidence packet generator (pdf-lib, fully client-side)
+ * Evidence packet generators (pdf-lib, fully client-side)
  *
- * Produces a printable PDF the homeowner can attach to a Comptroller Form 50-132
- * Notice of Protest. ASCII-only text (pdf-lib's StandardFonts can't render the
- * '$' is fine, but em-dashes / smart quotes are not — keep everything ASCII).
+ * Two documents are produced from the same analysis:
+ *
+ *   1. Board packet  — formal evidence to file with / present to the Appraisal
+ *      Review Board (ARB). Facts, comps, requested value, statute citation.
+ *
+ *   2. Personal packet — the homeowner's private hearing-day playbook: the number
+ *      to ask for, plain-English talking points, a what-to-say script, a
+ *      bring-this checklist, deadlines and do/don't tips. NOT for submission.
  */
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import type { PDFFont, PDFPage } from 'pdf-lib';
+import { rgb } from 'pdf-lib';
 import type { AnalysisResult } from '../engine/run';
 import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE } from '../constants';
 import { fmtUSD, fmtNum, fmtPsf } from '../format';
+import {
+  createDoc,
+  drawTable,
+  MARGIN,
+  PAGE_W,
+  PAGE_H,
+  NAVY,
+  GRAY,
+  SLATE,
+  EMERALD,
+  WHITE,
+  type DocBuilder,
+} from './builder';
 
-const MARGIN = 50;
-const PAGE_W = 612; // US Letter
-const PAGE_H = 792;
-const NAVY = rgb(0.09, 0.16, 0.31);
-const GRAY = rgb(0.35, 0.35, 0.35);
-const BLACK = rgb(0, 0, 0);
+const SUBTITLE = rgb(0.7, 0.78, 0.85);
+const EMERALD_BG = rgb(0.9, 0.96, 0.93);
+const AMBER_BG = rgb(0.99, 0.96, 0.86);
 
-// Strip anything outside the WinAnsi/ASCII range so pdf-lib never throws.
-const ascii = (s: string): string =>
-  (s ?? '').replace(/[^\x20-\x7E]/g, (c) => (c === '–' || c === '—' ? '-' : ' '));
-
-interface Cursor {
-  page: PDFPage;
-  y: number;
+function countyLabel(county: string): string {
+  return county === 'collin' ? 'Collin County (CCAD)' : 'Denton County (DCAD)';
 }
 
-export async function generatePacket(result: AnalysisResult): Promise<Uint8Array> {
+/** Numbers + arguments derived once, shared by both packets. */
+function derive(result: AnalysisResult) {
   const { subject, capFloor, equity, market, verdict } = result;
-  const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const floor = capFloor.floor ?? subject.appraisedValue;
 
-  let page = doc.addPage([PAGE_W, PAGE_H]);
-  const cur: Cursor = { page, y: PAGE_H - MARGIN };
+  // The value to request: verdict target, else the lowest indicated value we have.
+  const indicated: number[] = [];
+  if (equity) {
+    indicated.push(equity.indicatedValueRefined, equity.indicatedValueSizeAdjusted);
+    if (equity.indicatedValueClassMatched != null) indicated.push(equity.indicatedValueClassMatched);
+  }
+  if (market && market.estimatedValue > 0) indicated.push(market.estimatedValue);
+  const requested =
+    verdict.targetValue ?? (indicated.length ? Math.min(...indicated) : null);
 
-  const newPageIfNeeded = (need: number) => {
-    if (cur.y - need < MARGIN) {
-      page = doc.addPage([PAGE_W, PAGE_H]);
-      cur.page = page;
-      cur.y = PAGE_H - MARGIN;
+  // Open the conversation a touch below the ask so there is room to settle.
+  const opening = requested != null ? Math.round((requested * 0.96) / 1000) * 1000 : null;
+  const reduction = requested != null ? Math.max(0, Math.round(floor - requested)) : null;
+  const savings = reduction != null ? Math.round(reduction * TAX_RATE) : null;
+
+  // ── Plain-English talking points, strongest first. ──
+  const points: string[] = [];
+  if (market && market.source === 'purchase') {
+    points.push(
+      `You purchased this home recently for ${fmtUSD(market.estimatedValue)} in an arms-length sale - the single strongest indicator of market value.`
+    );
+  }
+  if (equity) {
+    points.push(
+      `Your appraisal works out to ${fmtPsf(equity.subjectPsf)}/sqft versus a neighborhood median of ${fmtPsf(equity.neighborhoodMedianPsf)}/sqft - you are appraised higher than ${equity.percentileHigher.toFixed(0)}% of comparable homes (rank #${equity.subjectRankOf} of ${equity.neighborhoodCount}).`
+    );
+    points.push(
+      `The median of comparable appraisals indicates a value of about ${fmtUSD(equity.indicatedValueRefined)} for a home like yours (refined, size/age-matched comps).`
+    );
+    if (equity.indicatedValueClassMatched != null) {
+      points.push(
+        `Limiting comps to your exact quality class (${subject.qualityClass}) indicates about ${fmtUSD(equity.indicatedValueClassMatched)} - an apples-to-apples comparison.`
+      );
     }
-  };
-
-  const text = (
-    s: string,
-    opts: { size?: number; font?: PDFFont; color?: ReturnType<typeof rgb>; indent?: number } = {}
-  ) => {
-    const size = opts.size ?? 10;
-    newPageIfNeeded(size + 4);
-    cur.page.drawText(ascii(s), {
-      x: MARGIN + (opts.indent ?? 0),
-      y: cur.y,
-      size,
-      font: opts.font ?? font,
-      color: opts.color ?? BLACK,
-    });
-    cur.y -= size + 5;
-  };
-
-  const heading = (s: string) => {
-    cur.y -= 8;
-    newPageIfNeeded(20);
-    cur.page.drawText(ascii(s), { x: MARGIN, y: cur.y, size: 13, font: bold, color: NAVY });
-    cur.y -= 6;
-    cur.page.drawLine({
-      start: { x: MARGIN, y: cur.y },
-      end: { x: PAGE_W - MARGIN, y: cur.y },
-      thickness: 0.75,
-      color: NAVY,
-    });
-    cur.y -= 12;
-  };
-
-  const kv = (k: string, v: string) => {
-    newPageIfNeeded(14);
-    cur.page.drawText(ascii(k), { x: MARGIN, y: cur.y, size: 10, font: bold, color: BLACK });
-    cur.page.drawText(ascii(v), { x: MARGIN + 200, y: cur.y, size: 10, font, color: BLACK });
-    cur.y -= 15;
-  };
-
-  // ── Title ────────────────────────────────────────────────────────────────
-  cur.page.drawText('Property Tax Protest Evidence Packet', {
-    x: MARGIN,
-    y: cur.y,
-    size: 18,
-    font: bold,
-    color: NAVY,
-  });
-  cur.y -= 22;
-  const countyName = subject.county === 'collin' ? 'Collin County (CCAD)' : 'Denton County (DCAD)';
-  text(`${countyName}   -   Generated ${new Date().toLocaleDateString('en-US')}`, {
-    size: 9,
-    color: GRAY,
-  });
-  cur.y -= 6;
-
-  // ── Subject property ──────────────────────────────────────────────────────
-  heading('Subject Property');
-  kv('Account / PID', subject.account);
-  kv('Address', subject.address);
-  kv('Living area (sqft)', fmtNum(subject.livingAreaSqft));
-  kv('Year built', subject.yearBuilt ? String(subject.yearBuilt) : 'n/a');
-  kv('Neighborhood code', subject.neighborhoodCode || 'n/a');
-  kv('Appraised value', fmtUSD(subject.appraisedValue));
-  kv('Market value', fmtUSD(subject.marketValue));
-  if (capFloor.available && capFloor.netAppraisedValue != null) {
-    kv('Net appraised (taxable)', fmtUSD(capFloor.netAppraisedValue));
+    points.push(
+      `After a size adjustment (larger homes carry lower $/sqft), comparable values indicate about ${fmtUSD(equity.indicatedValueSizeAdjusted)}.`
+    );
+  }
+  if (market && market.source !== 'purchase' && market.estimatedValue > 0) {
+    points.push(
+      `Market-value evidence (${market.source === 'rentcast' ? 'an automated valuation' : 'comparable sales you supplied'}) puts the home around ${fmtUSD(market.estimatedValue)}.`
+    );
+  }
+  if (verdict.repairAdjustment != null) {
+    points.push(
+      `Documented repairs / deferred maintenance total about ${fmtUSD(verdict.repairAdjustment)}, which should come off the value - bring the contractor bids.`
+    );
+  }
+  if (capFloor.available && capFloor.isCapped) {
+    points.push(
+      `Note: your homestead 10% cap already holds your taxable value at ${fmtUSD(floor)}. A reduction only lowers your bill if your argued value drops below that floor.`
+    );
   }
 
-  // ── Recommendation ────────────────────────────────────────────────────────
-  heading('Recommendation');
-  text(verdict.headline, { size: 12, font: bold, color: NAVY });
-  cur.y -= 2;
-  wrap(verdict.summary, text);
+  return { floor, requested, opening, reduction, savings, points };
+}
 
-  // ── Homestead cap ─────────────────────────────────────────────────────────
-  heading('Homestead Cap (10%) Check');
+// ── Shared chrome ──────────────────────────────────────────────────────────────
+
+function titleBand(b: DocBuilder, title: string, subtitle: string) {
+  const pg = b.page();
+  const h = 66;
+  pg.drawRectangle({ x: 0, y: PAGE_H - h, width: PAGE_W, height: h, color: NAVY });
+  pg.drawText(title, { x: MARGIN, y: PAGE_H - 34, size: 19, font: b.bold, color: WHITE });
+  pg.drawText(subtitle, { x: MARGIN, y: PAGE_H - 52, size: 9.5, font: b.font, color: SUBTITLE });
+  b.gap(38); // drop the cursor below the band
+}
+
+function disclaimer(b: DocBuilder) {
+  b.gap(12);
+  b.wrap(DISCLAIMER, { size: 8, color: GRAY });
+}
+
+function compRows(comps: import('../types').Comp[]): string[][] {
+  return comps.map((c) => [
+    c.address.slice(0, 40),
+    fmtNum(c.livingAreaSqft),
+    c.yearBuilt ? String(c.yearBuilt) : '-',
+    fmtUSD(c.appraisedValue),
+    fmtPsf(c.pricePerSqft),
+  ]);
+}
+
+const COMP_XS = [MARGIN, MARGIN + 230, MARGIN + 300, MARGIN + 360, MARGIN + 440];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. BOARD PACKET — formal evidence for the ARB
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8Array> {
+  const { subject, capFloor, equity, market, verdict } = result;
+  const d = derive(result);
+  const b = await createDoc();
+
+  titleBand(
+    b,
+    'Property Tax Protest - Evidence Packet',
+    `${countyLabel(subject.county)}   |   For the Appraisal Review Board   |   Generated ${new Date().toLocaleDateString('en-US')}`
+  );
+
+  // Requested value up top so the appraiser sees the ask immediately.
+  if (d.requested != null) {
+    b.callout(
+      [
+        { text: `Requested appraised value: ${fmtUSD(d.requested)}`, size: 13, bold: true, color: NAVY },
+        ...(d.reduction
+          ? [
+              {
+                text: `Reduction of ${fmtUSD(d.reduction)} from the current ${fmtUSD(d.floor)} (est. ${fmtUSD(d.savings ?? 0)}/yr in tax savings).`,
+                size: 10,
+              },
+            ]
+          : []),
+        ...(verdict.methodUsed ? [{ text: `Primary basis: ${verdict.methodUsed}.`, size: 9.5, color: GRAY }] : []),
+      ],
+      EMERALD_BG
+    );
+  }
+
+  // ── Subject ──
+  b.heading('Subject Property');
+  b.kv('Account / PID', subject.account);
+  b.kv('Address', subject.address);
+  b.kv('Living area (sqft)', fmtNum(subject.livingAreaSqft));
+  b.kv('Year built', subject.yearBuilt ? String(subject.yearBuilt) : 'n/a');
+  b.kv('Quality class', subject.qualityClass || 'n/a');
+  b.kv('Neighborhood code', subject.neighborhoodCode || 'n/a');
+  b.kv('Current appraised value', fmtUSD(subject.appraisedValue), NAVY);
+  b.kv('Current market value', fmtUSD(subject.marketValue));
+  if (capFloor.available && capFloor.netAppraisedValue != null) {
+    b.kv('Net appraised (taxable)', fmtUSD(capFloor.netAppraisedValue));
+  }
+
+  // ── Grounds ──
+  b.heading('Grounds for Protest');
+  b.wrap(
+    'The owner protests on the grounds of (1) over-market value and (2) unequal appraisal under ' +
+      'Tex. Tax Code 41.43(b)(3): the appraised value exceeds the median appraised value of a ' +
+      'reasonable number of comparable properties, appropriately adjusted.',
+  );
+
+  // ── Homestead cap ──
+  b.heading('Homestead Cap (10%) Check');
   if (!capFloor.available) {
-    wrap(
-      'The taxable (net appraised) value is not published for this county dataset, so the ' +
-        'homestead-cap floor could not be verified. If you have a homestead exemption, check your ' +
-        'appraisal notice: a protest only lowers your bill if your argued value is below the ' +
-        'capped TAXABLE value.',
-      text
+    b.wrap(
+      'The taxable (net appraised) value is not published in this county dataset, so the homestead-cap ' +
+        'floor could not be verified automatically. If the owner has a homestead exemption, a reduction ' +
+        'lowers the tax bill only if the argued value falls below the capped taxable value on the notice.',
     );
   } else if (capFloor.isCapped) {
-    kv('Appraised value', fmtUSD(capFloor.appraisedValue));
-    kv('Taxable floor', fmtUSD(capFloor.floor ?? 0));
-    wrap(
-      'The 10% homestead cap already holds the taxable value below market. A protest helps only if ' +
-        'comparable values come in BELOW this taxable floor.',
-      text
-    );
+    b.kv('Appraised value', fmtUSD(capFloor.appraisedValue));
+    b.kv('Taxable floor (capped)', fmtUSD(capFloor.floor ?? 0));
+    b.wrap('The 10% homestead cap already holds the taxable value below market.');
   } else {
-    kv('Taxable floor', fmtUSD(capFloor.floor ?? 0));
-    text('Not currently capped - appraised value equals taxable value.');
+    b.kv('Taxable floor', fmtUSD(capFloor.floor ?? 0));
+    b.text('Not currently capped - appraised value equals taxable value.');
   }
 
-  // ── Equity / unequal appraisal ────────────────────────────────────────────
-  heading('Unequal Appraisal Analysis (Tex. Tax Code 41.43(b)(3))');
+  // ── Unequal appraisal ──
+  b.heading('Unequal Appraisal Analysis (Tex. Tax Code 41.43(b)(3))');
   if (!equity) {
-    wrap('Not enough comparable properties were found in this neighborhood to run the equity analysis.', text);
+    b.wrap('Not enough comparable properties were found in this neighborhood to run the equity analysis.');
   } else {
-    kv('Subject $/sqft', fmtPsf(equity.subjectPsf));
-    kv('Neighborhood median $/sqft', fmtPsf(equity.neighborhoodMedianPsf));
-    kv('Refined comps median $/sqft', fmtPsf(equity.refinedMedianPsf));
-    kv('Indicated value (all comps)', fmtUSD(equity.indicatedValueAll));
-    kv('Indicated value (refined)', fmtUSD(equity.indicatedValueRefined));
-    kv('Subject rank', `#${equity.subjectRankOf} of ${equity.neighborhoodCount} (1 = highest $/sqft)`);
-    cur.y -= 4;
-    text('Comparable properties (refined set, sorted by $/sqft):', { font: bold });
-    compTable(equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps, cur, bold, font, newPageIfNeeded);
+    b.kv('Subject $/sqft', fmtPsf(equity.subjectPsf));
+    b.kv('Neighborhood median $/sqft', fmtPsf(equity.neighborhoodMedianPsf));
+    b.kv('Refined comps median $/sqft', fmtPsf(equity.refinedMedianPsf));
+    b.kv('Indicated value (all comps)', fmtUSD(equity.indicatedValueAll));
+    b.kv('Indicated value (refined)', fmtUSD(equity.indicatedValueRefined), NAVY);
+    if (equity.indicatedValueClassMatched != null) {
+      b.kv(
+        `Indicated value (class ${subject.qualityClass})`,
+        `${fmtUSD(equity.indicatedValueClassMatched)}  (${equity.classMatchedComps.length} same-class comps)`
+      );
+    }
+    b.kv('Indicated value (size adjusted)', fmtUSD(equity.indicatedValueSizeAdjusted));
+    b.kv('Subject rank', `#${equity.subjectRankOf} of ${equity.neighborhoodCount} (1 = highest $/sqft)`);
+    b.gap(4);
+    b.text('Comparable properties (refined set, sorted by $/sqft):', { font: b.bold });
+    const comps = equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps;
+    drawTable(b, ['Address', 'SqFt', 'Year', 'Apprsd', '$/sqft'], compRows(comps), COMP_XS);
   }
 
-  // ── Market value ──────────────────────────────────────────────────────────
-  if (market) {
-    heading('Market Value Evidence');
-    kv('Source', market.source === 'rentcast' ? 'RentCast AVM' : 'Manually entered sales');
-    kv('Estimated market value', fmtUSD(market.estimatedValue));
+  // ── Market evidence ──
+  if (market && market.estimatedValue > 0) {
+    b.heading('Market Value Evidence');
+    const src =
+      market.source === 'rentcast'
+        ? 'Automated valuation (RentCast)'
+        : market.source === 'purchase'
+          ? 'Recent purchase price'
+          : 'Comparable sales (owner-supplied)';
+    b.kv('Source', src);
+    b.kv('Estimated market value', fmtUSD(market.estimatedValue), NAVY);
     if (market.lowRange != null && market.highRange != null) {
-      kv('Estimate range', `${fmtUSD(market.lowRange)} - ${fmtUSD(market.highRange)}`);
+      b.kv('Estimate range', `${fmtUSD(market.lowRange)} - ${fmtUSD(market.highRange)}`);
     }
     if (market.comparables && market.comparables.length > 0) {
-      cur.y -= 4;
-      text('Comparable sales:', { font: bold });
-      marketTable(market.comparables, cur, bold, font, newPageIfNeeded);
-    }
-  }
-
-  // ── How to file ───────────────────────────────────────────────────────────
-  heading('How to File Your Protest');
-  const lines = [
-    `1. File Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) with the ${countyName} appraisal district.`,
-    `2. Deadline: ${PROTEST_DEADLINE}, or 30 days after your Notice of Appraised Value - whichever is later.`,
-    '3. Check both grounds on the form: "Value is over market value" and "Value is unequal compared with other properties."',
-    '4. Attach this packet as your evidence.',
-    '5. You may settle informally with an appraiser, or present to the Appraisal Review Board (ARB).',
-  ];
-  for (const l of lines) wrap(l, text);
-
-  if (verdict.targetValue != null) {
-    cur.y -= 4;
-    text(`Suggested value to request: ${fmtUSD(verdict.targetValue)}`, { font: bold, color: NAVY });
-    if (verdict.equityReduction != null) {
-      text(
-        `Potential reduction ~${fmtUSD(verdict.equityReduction)}  (est. ~${fmtUSD(
-          verdict.equityReduction * TAX_RATE
-        )}/yr in taxes)`,
-        { size: 9, color: GRAY }
+      b.gap(4);
+      b.text('Comparable sales:', { font: b.bold });
+      drawTable(
+        b,
+        ['Address', 'Sale', 'Date', 'SqFt', '$/sqft'],
+        market.comparables.map((c) => [
+          c.address.slice(0, 40),
+          fmtUSD(c.salePrice),
+          c.saleDate ? c.saleDate.slice(0, 10) : '-',
+          fmtNum(c.livingAreaSqft),
+          fmtPsf(c.pricePerSqft),
+        ]),
+        [MARGIN, MARGIN + 230, MARGIN + 310, MARGIN + 390, MARGIN + 460]
       );
     }
   }
 
-  // ── Disclaimer ────────────────────────────────────────────────────────────
-  cur.y -= 10;
-  wrap(DISCLAIMER, text, { size: 8, color: GRAY });
-
-  return doc.save();
+  disclaimer(b);
+  return b.bytes();
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. PERSONAL PACKET — the homeowner's hearing-day playbook
+// ─────────────────────────────────────────────────────────────────────────────
 
-type TextFn = (s: string, opts?: { size?: number; font?: PDFFont; color?: ReturnType<typeof rgb>; indent?: number }) => void;
+export async function generatePersonalPacket(result: AnalysisResult): Promise<Uint8Array> {
+  const { subject } = result;
+  const d = derive(result);
+  const b = await createDoc();
 
-function wrap(
-  s: string,
-  text: TextFn,
-  opts: { size?: number; color?: ReturnType<typeof rgb> } = {}
-) {
-  const size = opts.size ?? 10;
-  const maxChars = Math.floor((PAGE_W - 2 * MARGIN) / (size * 0.5));
-  const words = ascii(s).split(' ');
-  let line = '';
-  for (const w of words) {
-    if ((line + ' ' + w).trim().length > maxChars) {
-      text(line, { size, color: opts.color });
-      line = w;
-    } else {
-      line = (line + ' ' + w).trim();
+  titleBand(
+    b,
+    'Your Hearing Playbook',
+    `${subject.address}  |  Personal prep - do NOT submit this page to the ARB`
+  );
+
+  // ── Bottom line ──
+  if (d.requested != null) {
+    b.callout(
+      [
+        { text: 'YOUR BOTTOM LINE', size: 10, bold: true, color: EMERALD },
+        { text: `Ask the board to set your value at: ${fmtUSD(d.requested)}`, size: 13, bold: true, color: NAVY },
+        ...(d.opening
+          ? [{ text: `Open the conversation at ${fmtUSD(d.opening)} - it gives you room to settle.`, size: 10 }]
+          : []),
+        ...(d.savings
+          ? [{ text: `If you win the full reduction, you save roughly ${fmtUSD(d.savings)} per year.`, size: 10 }]
+          : []),
+      ],
+      EMERALD_BG
+    );
+  } else {
+    b.callout(
+      [
+        { text: 'HEADS UP', size: 10, bold: true, color: SLATE },
+        { text: result.verdict.headline, size: 12, bold: true, color: NAVY },
+        { text: 'The data does not clearly support a reduction this year - read the summary before filing.', size: 10 },
+      ],
+      AMBER_BG,
+      rgb(0.85, 0.6, 0.1)
+    );
+  }
+
+  // ── How it works ──
+  b.heading('How the Protest Works (3 steps)');
+  const steps = [
+    `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`,
+    '2. INFORMAL MEETING. Most cases settle here. You meet one-on-one with a district appraiser, show your evidence, and they often make an offer on the spot. If the offer is close to your number, you can accept and you are done.',
+    '3. FORMAL ARB HEARING. If you do not settle, you present to a 3-person Appraisal Review Board. It is informal - about 15 minutes. You speak, the district appraiser responds, the board decides that day.',
+  ];
+  for (const s of steps) {
+    b.wrap(s);
+    b.gap(3);
+  }
+
+  // ── Talking points ──
+  b.heading('Your Strongest Arguments');
+  if (d.points.length === 0) {
+    b.wrap('No automated arguments were generated. Bring any evidence that your value is too high.');
+  } else {
+    for (const p of d.points) {
+      b.wrap(`-  ${p}`);
+      b.gap(2);
     }
   }
-  if (line) text(line, { size, color: opts.color });
+
+  // ── Script ──
+  b.heading('What To Say');
+  b.text('At the informal meeting:', { font: b.bold, color: SLATE });
+  b.wrap(
+    `"Hi, I'm protesting the value on ${subject.address}. I have two grounds: it's over market value, ` +
+      `and it's unequally appraised compared to my neighbors. Based on comparable appraisals in my own ` +
+      `neighborhood, the median indicates about ${d.requested != null ? fmtUSD(d.requested) : 'a lower value'}. ` +
+      `Here's my evidence packet. I'd like the value reduced to ${d.requested != null ? fmtUSD(d.requested) : 'that figure'}."`,
+  );
+  b.gap(4);
+  b.text('If they counter higher than your number:', { font: b.bold, color: SLATE });
+  b.wrap(
+    '"I appreciate that, but my comparables clearly support a lower figure. Can we meet closer to ' +
+      `${d.requested != null ? fmtUSD(d.requested) : 'my requested value'}?" Stay calm, stay on the data, and ` +
+      'do not feel pressured to accept the first offer.',
+  );
+  b.gap(4);
+  b.text('At the formal ARB hearing:', { font: b.bold, color: SLATE });
+  b.wrap(
+    'Hand each board member a copy of the BOARD packet. Walk through your strongest argument first ' +
+      '(usually the unequal-appraisal table), state your requested value, and stop. Answer their ' +
+      'questions briefly and factually. Then thank them.',
+  );
+
+  // ── Checklist ──
+  b.heading('Bring This To Your Hearing');
+  const checklist = [
+    'The BOARD evidence packet (printed - one copy for you, three for the ARB).',
+    'Closing disclosure / settlement statement, if you bought recently (strongest market proof).',
+    'Any independent fee appraisal you have.',
+    'Contractor bids / repair estimates: foundation, roof, HVAC, plumbing (these reduce value).',
+    'Dated photos of defects, damage, or deferred maintenance.',
+    'Notes on negative location factors: backs to highway/commercial, power lines, flood plain, easements.',
+    'Your appraisal notice and a photo ID.',
+  ];
+  for (const c of checklist) b.wrap(`[ ]  ${c}`, { size: 9.5 });
+
+  // ── Do / Don't ──
+  b.heading('Do / Don\'t');
+  const dos = [
+    'DO be polite and concise - the board hears dozens of cases a day.',
+    'DO lead with your single best piece of evidence.',
+    'DO write down any offer before accepting it.',
+    "DON'T mention what you paid if you bought years ago and the value rose - it can hurt you.",
+    "DON'T argue your taxes are too high - argue your VALUE is too high. Only value is in scope.",
+    "DON'T accept a lowball informal offer if your comps clearly support more of a reduction.",
+  ];
+  for (const line of dos) b.wrap(line, { size: 9.5 });
+
+  disclaimer(b);
+  return b.bytes();
 }
 
-function row(page: PDFPage, y: number, cols: string[], xs: number[], f: PDFFont, size: number) {
-  cols.forEach((c, i) => {
-    page.drawText(ascii(c), { x: xs[i], y, size, font: f, color: BLACK });
-  });
-}
+// ─────────────────────────────────────────────────────────────────────────────
 
-function compTable(
-  comps: import('../types').Comp[],
-  cur: Cursor,
-  bold: PDFFont,
-  font: PDFFont,
-  ensure: (n: number) => void
-) {
-  const xs = [MARGIN, MARGIN + 230, MARGIN + 300, MARGIN + 360, MARGIN + 430];
-  ensure(16);
-  row(cur.page, cur.y, ['Address', 'SqFt', 'Year', 'Apprsd', '$/sqft'], xs, bold, 8);
-  cur.y -= 12;
-  for (const c of comps.slice(0, 25)) {
-    ensure(11);
-    row(
-      cur.page,
-      cur.y,
-      [
-        c.address.slice(0, 40),
-        fmtNum(c.livingAreaSqft),
-        c.yearBuilt ? String(c.yearBuilt) : '-',
-        fmtUSD(c.appraisedValue),
-        fmtPsf(c.pricePerSqft),
-      ],
-      xs,
-      font,
-      8
-    );
-    cur.y -= 11;
-  }
-}
-
-function marketTable(
-  comps: import('../types').MarketComp[],
-  cur: Cursor,
-  bold: PDFFont,
-  font: PDFFont,
-  ensure: (n: number) => void
-) {
-  const xs = [MARGIN, MARGIN + 230, MARGIN + 310, MARGIN + 390, MARGIN + 460];
-  ensure(16);
-  row(cur.page, cur.y, ['Address', 'Sale', 'Date', 'SqFt', '$/sqft'], xs, bold, 8);
-  cur.y -= 12;
-  for (const c of comps.slice(0, 25)) {
-    ensure(11);
-    row(
-      cur.page,
-      cur.y,
-      [
-        c.address.slice(0, 40),
-        fmtUSD(c.salePrice),
-        c.saleDate ? c.saleDate.slice(0, 10) : '-',
-        fmtNum(c.livingAreaSqft),
-        fmtPsf(c.pricePerSqft),
-      ],
-      xs,
-      font,
-      8
-    );
-    cur.y -= 11;
-  }
-}
-
-/** Trigger a browser download of the generated packet. */
+/** Trigger a browser download of generated PDF bytes. */
 export function downloadPacket(bytes: Uint8Array, filename: string) {
   const ab = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(ab).set(bytes);

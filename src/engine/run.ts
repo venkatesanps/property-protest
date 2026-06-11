@@ -16,8 +16,16 @@ import type {
   Comp,
 } from '../types';
 import { geocodeAddress } from '../adapters/census';
-import { fetchCollinSubject, fetchCollinComps } from '../adapters/collin';
-import { fetchDentonSubject, fetchDentonComps } from '../adapters/denton';
+import {
+  fetchCollinSubject,
+  fetchCollinSubjectByAccount,
+  fetchCollinComps,
+} from '../adapters/collin';
+import {
+  fetchDentonSubject,
+  fetchDentonSubjectByAccount,
+  fetchDentonComps,
+} from '../adapters/denton';
 import { fetchRentcastMarket, buildManualMarket } from '../adapters/market';
 import { computeCapFloor } from './cap';
 import { computeEquity } from './equity';
@@ -35,14 +43,27 @@ export interface AnalysisResult {
 export interface RunOptions {
   address: string;
   county?: County;
+  /** propid (Collin) / pid (Denton) from a selected autocomplete suggestion. */
+  account?: string;
   rentcastKey?: string;
   manualComps?: ManualComp[];
+  repairEstimateTotal?: number;
+  recentPurchasePrice?: number;
+  recentPurchaseDate?: string;
   onStep?: (s: AppStep) => void;
 }
 
-async function fetchSubject(county: County, address: string): Promise<SubjectProperty> {
-  if (county === 'collin') return fetchCollinSubject(address);
-  if (county === 'denton') return fetchDentonSubject(address);
+async function fetchSubject(
+  county: County,
+  address: string,
+  account?: string
+): Promise<SubjectProperty> {
+  if (county === 'collin') {
+    return account ? fetchCollinSubjectByAccount(account) : fetchCollinSubject(address);
+  }
+  if (county === 'denton') {
+    return account ? fetchDentonSubjectByAccount(account) : fetchDentonSubject(address);
+  }
   throw new Error('This county is not yet supported (Collin and Denton only).');
 }
 
@@ -57,6 +78,8 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
   let county = opts.county;
   let geocode: GeocodeResult | null = null;
 
+  // When the user picked an autocomplete suggestion we already know the county
+  // (and account), so we skip the CORS-blocked Census geocoder entirely.
   if (!county) {
     onStep?.('geocoding');
     geocode = await geocodeAddress(address);
@@ -69,7 +92,7 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
   }
 
   onStep?.('loading_property');
-  const subject = await fetchSubject(county, address);
+  const subject = await fetchSubject(county, address, opts.account);
   if (geocode) {
     subject.lat = geocode.lat;
     subject.lng = geocode.lng;
@@ -93,7 +116,11 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
     market = buildManualMarket(subject.livingAreaSqft, opts.manualComps);
   }
 
-  const verdict = computeVerdict(subject, capFloor, equity, market);
+  const verdict = computeVerdict(subject, capFloor, equity, market, {
+    repairEstimateTotal: opts.repairEstimateTotal,
+    recentPurchasePrice: opts.recentPurchasePrice,
+    recentPurchaseDate: opts.recentPurchaseDate,
+  });
   onStep?.('results');
   return { geocode, subject, capFloor, equity, market, verdict };
 }

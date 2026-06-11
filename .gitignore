@@ -30,3 +30,7 @@ dist-ssr
 
 # TypeScript cache
 *.tsbuildinfo
+.gstack/
+
+# Local dev artifacts (generated sample packets)
+sample-*.pdf

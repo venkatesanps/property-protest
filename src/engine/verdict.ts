@@ -1,89 +1,118 @@
 // ─── Verdict engine ───────────────────────────────────────────────────────────
 //
-// Combines the cap floor + equity (+ optional market) into a recommendation.
+// Combines the cap floor + equity (+ optional market, recent purchase, repairs)
+// into a recommendation and the value to request at the ARB.
 
 import type {
   SubjectProperty,
   CapFloorResult,
   EquityResult,
   MarketValueResult,
+  ProtestExtras,
   Verdict,
 } from '../types';
 import { TAX_RATE } from '../constants';
 import { fmtUSD } from '../format';
 
+interface Candidate {
+  method: string;
+  value: number;
+}
+
 export function computeVerdict(
   subject: SubjectProperty,
   capFloor: CapFloorResult,
   equity: EquityResult | null,
-  market: MarketValueResult | null
+  market: MarketValueResult | null,
+  extras: ProtestExtras = {}
 ): Verdict {
   // Floor below which a protest actually saves money. When the homestead cap is
   // unavailable (Collin), any reduction below appraised value helps.
   const floor = capFloor.floor ?? subject.appraisedValue;
 
-  const candidates: { method: string; value: number }[] = [];
+  // ── Build candidate values, lowest (best for the homeowner) wins. ──
+  const candidates: Candidate[] = [];
   if (equity) {
-    const indicated =
-      equity.refinedComps.length >= 3 ? equity.indicatedValueRefined : equity.indicatedValueAll;
-    candidates.push({ method: 'equity (unequal appraisal)', value: indicated });
+    // Use the most-defensible equity number available: prefer refined comps,
+    // then take the lowest of the refinement methods.
+    const equityOptions: Candidate[] = [];
+    const refinedOk = equity.refinedComps.length >= 3;
+    equityOptions.push({
+      method: refinedOk ? 'equity - refined comps' : 'equity - neighborhood median',
+      value: refinedOk ? equity.indicatedValueRefined : equity.indicatedValueAll,
+    });
+    if (equity.indicatedValueClassMatched != null) {
+      equityOptions.push({ method: 'equity - same quality class', value: equity.indicatedValueClassMatched });
+    }
+    equityOptions.push({ method: 'equity - size adjusted', value: equity.indicatedValueSizeAdjusted });
+    candidates.push(equityOptions.reduce((a, b) => (b.value < a.value ? b : a)));
   }
   if (market && market.estimatedValue > 0) {
-    candidates.push({ method: 'market value', value: market.estimatedValue });
+    const label = market.source === 'rentcast' ? 'market value (AVM)' : 'market value (comps)';
+    candidates.push({ method: label, value: market.estimatedValue });
+  }
+  const purchase = extras.recentPurchasePrice ?? 0;
+  if (purchase > 0) {
+    candidates.push({ method: 'recent purchase price', value: purchase });
   }
 
   if (candidates.length === 0) {
-    return {
-      code: 'incomplete',
-      headline: 'Not enough comparable data',
-      targetValue: null,
-      equityReduction: null,
-      capFloor,
-      equity,
-      market,
-      summary: 'We could not gather enough comparable properties to evaluate this address.',
-    };
+    return base('incomplete', 'Not enough comparable data', null, null, null, null, capFloor, equity, market,
+      'We could not gather enough comparable properties to evaluate this address.');
   }
 
   const best = candidates.reduce((a, b) => (b.value < a.value ? b : a));
 
-  if (best.value < floor - 500) {
-    const reduction = floor - best.value;
+  // ── Documented-repair (condition) deduction lowers the requested value further. ──
+  const repair = extras.repairEstimateTotal && extras.repairEstimateTotal > 0 ? extras.repairEstimateTotal : 0;
+  const target = Math.max(0, best.value - repair);
+
+  if (target < floor - 500) {
+    const reduction = floor - target;
     const tax = reduction * TAX_RATE;
-    return {
-      code: 'protest',
-      headline: `Worth protesting - target about ${fmtUSD(best.value)}`,
-      targetValue: Math.round(best.value),
-      equityReduction: Math.round(reduction),
+    const repairNote = repair > 0 ? ` (after a ${fmtUSD(repair)} repair/condition deduction)` : '';
+    return base(
+      'protest',
+      `Worth protesting - target about ${fmtUSD(target)}`,
+      Math.round(target),
+      Math.round(reduction),
+      best.method,
+      repair > 0 ? Math.round(repair) : null,
       capFloor,
       equity,
       market,
-      summary:
-        `The ${best.method} method indicates about ${fmtUSD(best.value)}, below your tax floor of ` +
-        `${fmtUSD(floor)}. That is roughly a ${fmtUSD(reduction)} reduction, or about ` +
-        `${fmtUSD(tax)}/year in taxes (estimate).`,
-    };
+      `The ${best.method} method indicates about ${fmtUSD(best.value)}${repairNote}, below your tax ` +
+        `floor of ${fmtUSD(floor)}. That is roughly a ${fmtUSD(reduction)} reduction, or about ` +
+        `${fmtUSD(tax)}/year in taxes (estimate).`
+    );
   }
 
   let summary: string;
   if (capFloor.isCapped) {
     summary =
       `Your homestead 10% cap already holds your taxable value at ${fmtUSD(floor)}, below market. ` +
-      `Comparable values (about ${fmtUSD(best.value)}) sit above that floor, so a protest would not ` +
-      `lower your tax bill this year.`;
+      `Your best supported value (about ${fmtUSD(target)}) still sits above that floor, so a protest ` +
+      `would not lower your tax bill this year.`;
   } else {
     summary =
-      `Comparable values (about ${fmtUSD(best.value)}) are at or above your appraised value of ` +
+      `Your best supported value (about ${fmtUSD(target)}) is at or above your appraised value of ` +
       `${fmtUSD(subject.appraisedValue)}. The property appears fairly assessed.`;
   }
-  return {
-    code: 'dont_protest',
-    headline: 'Probably not worth protesting this year',
-    targetValue: null,
-    equityReduction: null,
-    capFloor,
-    equity,
-    market,
-    summary,
-  };
+  return base('dont_protest', 'Probably not worth protesting this year', null, null, best.method,
+    repair > 0 ? Math.round(repair) : null, capFloor, equity, market, summary);
+}
+
+function base(
+  code: Verdict['code'],
+  headline: string,
+  targetValue: number | null,
+  equityReduction: number | null,
+  methodUsed: string | null,
+  repairAdjustment: number | null,
+  capFloor: CapFloorResult,
+  equity: EquityResult | null,
+  market: MarketValueResult | null,
+  summary: string
+): Verdict {
+  return { code, headline, targetValue, equityReduction, methodUsed, repairAdjustment, capFloor, equity, market, summary };
 }

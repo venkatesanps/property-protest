@@ -144,6 +144,23 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
   return toSubject(rows[0]);
 }
 
+/** Exact lookup by propid — used when an autocomplete suggestion was selected. */
+export async function fetchCollinSubjectByAccount(propid: string): Promise<SubjectProperty> {
+  const rows = await soql<CollinRow>({
+    $where: `propid='${sqlEscape(propid)}'`,
+    $select:
+      'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
+      'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
+      'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
+      'prevvalmarket,prevvalappraised,noticevalappraised,noticedate',
+    $limit: '1',
+  });
+  if (rows.length === 0) {
+    throw new Error(`Collin County property ${propid} could not be loaded.`);
+  }
+  return toSubject(rows[0]);
+}
+
 /**
  * Fetch the comp pool: all residential (A) properties in the same CAD
  * neighborhood as the subject, with a living area > 0.

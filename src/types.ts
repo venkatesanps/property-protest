@@ -41,7 +41,7 @@ export interface Comp {
 /** Result of the equity analysis engine. */
 export interface EquityResult {
   neighborhoodMedianPsf: number;   // full neighborhood
-  refinedMedianPsf: number;        // filtered comps
+  refinedMedianPsf: number;        // filtered comps (size/age)
   indicatedValueAll: number;       // median_all × subj sqft
   indicatedValueRefined: number;   // median_refined × subj sqft
   subjectPsf: number;
@@ -50,6 +50,15 @@ export interface EquityResult {
   percentileHigher: number;        // % of neighborhood below subject psf
   comps: Comp[];
   refinedComps: Comp[];
+  // ── adjustment refinements ──
+  /** Comps matched on quality/class code (apples-to-apples). */
+  classMatchedComps: Comp[];
+  classMatchedMedianPsf: number | null;
+  indicatedValueClassMatched: number | null;
+  /** Marginal $/sqft used for the size adjustment (diminishing-value rule). */
+  sizeAdjMarginalRate: number;
+  /** Median of size-adjusted comp values brought to subject size. */
+  indicatedValueSizeAdjusted: number;
 }
 
 /** Result of the homestead-cap floor check. */
@@ -62,13 +71,22 @@ export interface CapFloorResult {
   floor: number | null;          // the taxable floor (= netAppraisedValue)
 }
 
-/** Optional market value estimate from RentCast AVM. */
+/** Optional market value estimate from RentCast AVM, manual comps, or a recent sale. */
 export interface MarketValueResult {
-  source: 'rentcast' | 'manual';
+  source: 'rentcast' | 'manual' | 'purchase';
   estimatedValue: number;
   lowRange?: number;
   highRange?: number;
   comparables?: MarketComp[];
+}
+
+/** Homeowner-supplied extras that strengthen a protest. */
+export interface ProtestExtras {
+  /** Total of contractor repair/deferred-maintenance estimates (condition adj.). */
+  repairEstimateTotal?: number;
+  /** Recent arms-length purchase price — strongest market evidence if recent. */
+  recentPurchasePrice?: number;
+  recentPurchaseDate?: string;
 }
 
 export interface MarketComp {
@@ -96,6 +114,10 @@ export interface Verdict {
   headline: string;
   targetValue: number | null;     // the value to request at ARB
   equityReduction: number | null; // how much equity method saves vs floor
+  /** Which method produced the recommended value (for the packet). */
+  methodUsed: string | null;
+  /** Dollar amount deducted for documented repairs/condition, if any. */
+  repairAdjustment: number | null;
   capFloor: CapFloorResult;
   equity: EquityResult | null;
   market: MarketValueResult | null;

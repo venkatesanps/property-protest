@@ -34,6 +34,27 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
   const rank = valid.filter((c) => c.pricePerSqft > subjectPsf).length + 1;
   const sorted = [...valid].sort((a, b) => a.pricePerSqft - b.pricePerSqft);
 
+  // ── quality-class matching: only comps of the subject's class (apples-to-apples)
+  const classMatched =
+    subject.qualityClass.trim() !== ''
+      ? valid.filter((c) => c.qualityClass.trim() === subject.qualityClass.trim())
+      : [];
+  const hasClass = classMatched.length >= 3;
+  const classMatchedMedianPsf = hasClass ? median(classMatched.map((c) => c.pricePerSqft)) : null;
+  const indicatedValueClassMatched = classMatchedMedianPsf
+    ? classMatchedMedianPsf * subject.livingAreaSqft
+    : null;
+
+  // ── size adjustment: larger homes carry lower $/sqft, so bring each comp to the
+  // subject's size using a diminishing marginal rate (~50% of the median $/sqft).
+  // Indicated value = median of size-adjusted comp values. Standard mass-appraisal
+  // approach that prevents small comps from inflating a large subject (and vice versa).
+  const sizeAdjMarginalRate = 0.5 * medAll;
+  const adjustedValues = valid.map(
+    (c) => c.appraisedValue + (subject.livingAreaSqft - c.livingAreaSqft) * sizeAdjMarginalRate
+  );
+  const indicatedValueSizeAdjusted = median(adjustedValues);
+
   return {
     neighborhoodMedianPsf: medAll,
     refinedMedianPsf: medRefined,
@@ -45,5 +66,10 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
     percentileHigher: (higher / valid.length) * 100,
     comps: sorted,
     refinedComps: sorted.filter((c) => c.isRefined),
+    classMatchedComps: [...classMatched].sort((a, b) => a.pricePerSqft - b.pricePerSqft),
+    classMatchedMedianPsf,
+    indicatedValueClassMatched,
+    sizeAdjMarginalRate,
+    indicatedValueSizeAdjusted,
   };
 }

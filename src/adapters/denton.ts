@@ -123,6 +123,15 @@ export async function fetchDentonSubject(address: string): Promise<SubjectProper
   return toSubject(feats[0]);
 }
 
+/** Exact lookup by pid — used when an autocomplete suggestion was selected. */
+export async function fetchDentonSubjectByAccount(pid: string): Promise<SubjectProperty> {
+  const feats = await query(`pid=${Number(pid)}`, SUBJECT_FIELDS);
+  if (feats.length === 0) {
+    throw new Error(`Denton County property ${pid} could not be loaded.`);
+  }
+  return toSubject(feats[0]);
+}
+
 export async function fetchDentonComps(
   neighborhoodCode: string,
   subjectAccount: string
