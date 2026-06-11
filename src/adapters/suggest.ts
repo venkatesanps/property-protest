@@ -49,7 +49,7 @@ async function suggestCollin(prefix: string, signal?: AbortSignal): Promise<Addr
   url.searchParams.set('$select', 'propid,situsconcat');
   url.searchParams.set(
     '$where',
-    `upper(situsconcat) like '${esc(prefix)}%' AND propcategorycode='A' AND situsconcat IS NOT NULL`
+    `upper(situsconcat) like '${esc(prefix)}%' AND propcategorycode IN ('A','B') AND situsconcat IS NOT NULL`
   );
   url.searchParams.set('$order', 'situsconcat');
   url.searchParams.set('$limit', '8');

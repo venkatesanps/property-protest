@@ -174,7 +174,7 @@ async function probeSource(src: CollinSource): Promise<CollinRollInfo | null> {
   try {
     const url = new URL(resourceUrl(src.id));
     url.searchParams.set('$select', SUBJECT_SELECT);
-    url.searchParams.set('$where', "propcategorycode='A'");
+    url.searchParams.set('$where', "propcategorycode IN ('A','B')");
     url.searchParams.set('$order', 'noticedate DESC');
     url.searchParams.set('$limit', '1');
     const resp = await fetch(url.toString(), { headers: makeHeaders() });
@@ -250,7 +250,7 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
   const { bldgNum, streetName } = parseAddress(address);
 
   const rows = await soql<CollinRow>({
-    $where: `situsbldgnum='${sqlEscape(bldgNum)}' AND situsstreetname LIKE '${sqlEscape(streetName)}%' AND propcategorycode='A'`,
+    $where: `situsbldgnum='${sqlEscape(bldgNum)}' AND situsstreetname LIKE '${sqlEscape(streetName)}%' AND propcategorycode IN ('A','B')`,
     $select: SUBJECT_SELECT,
     $limit: '5',
   });
@@ -284,7 +284,7 @@ export async function fetchCollinComps(
   limit = 500
 ): Promise<Comp[]> {
   const rows = await soql<CollinRow>({
-    $where: `nbhdcode='${sqlEscape(neighborhoodCode)}' AND propcategorycode='A' AND imprvmainarea>0 AND currvalappraised>0`,
+    $where: `nbhdcode='${sqlEscape(neighborhoodCode)}' AND propcategorycode IN ('A','B') AND imprvmainarea>0 AND currvalappraised>0`,
     $select:
       'propid,situsconcat,imprvmainarea,imprvyearbuilt,imprvclasscd,currvalappraised,currvalland,currvalimprv',
     $limit: String(limit),
