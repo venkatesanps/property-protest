@@ -1,41 +1,90 @@
-# Agent Instructions for tx-protest-helper
+# Agent Instructions for ProtestIQ (tx-protest-helper)
 
 ## Project summary
-- Client-side React + TypeScript + Vite app.
-- Builds a static site for Texas property tax protest analysis in Collin and Denton counties.
-- No backend server, no database, no paid services.
-- The app is designed to run entirely in the browser and may be deployed to GitHub Pages.
+
+Client-side React 19 + TypeScript + Vite app. Builds a static site for Texas property
+tax protest analysis in Collin and Denton counties (Frisco area). No backend, no
+database, no paid services required. Deploys to GitHub Pages via GitHub Actions.
 
 ## Local commands
-- `npm install`
-- `npm run dev` — start local Vite development server
-- `npm run build` — production build
-- `npm run lint` — run ESLint over the workspace
 
-## Architecture and key areas
-- `src/main.tsx` — app entry point
-- `src/App.tsx` — primary application shell and routing
-- `src/adapters/` — county-specific data adapters and external API integration
-- `src/components/engine/` — core analysis logic for cap checks, equity comparison, and verdicts
-- `src/pdf/packet.ts` — PDF evidence-packet generation
-- `src/constants.ts` — shared constants and resource IDs
-- `src/types.ts` — domain types used across the app
+```bash
+npm install
+npm run dev        # Vite dev server at http://localhost:5173
+npm run build      # production build into dist/
+npm run lint       # ESLint over src/
+npx tsx scripts/gen-sample.ts  # regenerate sample PDFs from live Collin data
+```
 
-## Conventions and important behavior
-- This is a browser-only static application. Do not add a server or backend API unless the repo is explicitly extended for that purpose.
-- The app supports only Collin and Denton counties today; adding another county should follow the adapter pattern in `src/adapters/`.
-- The project depends on browser CORS behavior for public data sources. Key known cases:
-  - US Census geocoder often fails due to CORS, and the UI falls back to manual county selection.
-  - RentCast may be CORS-blocked, and the app should gracefully fall back to manual comps.
-- If modifying deployment behavior, update `vite.config.ts` base path for GitHub Pages.
+## Architecture
 
-## Useful docs and references
-- `README.md` — user-facing project description, deployment notes, and limitations
-- `vite.config.ts` — static site base path configuration for GitHub Pages
-- `package.json` — scripts and dependency set
+The app is a **county router + per-county adapters** pattern:
 
-## Agent guidance
-- Prefer minimal changes that keep the app browser-only and static.
-- Preserve the existing county adapter pattern when adding new sources or counties.
-- Keep user-facing messaging aligned with the app's disclaimer: this is not legal or tax advice.
-- When editing data source logic, preserve the distinction between Collin (`src/adapters/collin.ts`) and Denton (`src/adapters/denton.ts`).
+```text
+Address input → Census geocoder (county detection, often CORS-fails)
+    → County adapter (Collin: Socrata; Denton: ArcGIS)
+        → fetchSubject()  →  SubjectProperty
+        → fetchComps()    →  Comp[]  (all residential homes in appraisal neighborhood)
+    → computeCapFloor()   src/engine/cap.ts
+    → computeEquity()     src/engine/equity.ts  (§41.43(b)(3) median $/sqft)
+    → market evidence     src/adapters/market.ts + hpi.ts  (optional)
+    → computeVerdict()    src/engine/verdict.ts
+    → generateBoardPacket() / generatePersonalPacket()  src/pdf/packet.ts
+```
+
+## Key source files
+
+| File | Responsibility |
+| ---- | -------------- |
+| `src/types.ts` | All domain interfaces: `SubjectProperty`, `Comp`, `EquityResult`, `CapFloorResult`, `MarketValueResult`, `Verdict`, `ManualComp`, `HpiAdjustment`, `PurchaseEvidence` |
+| `src/engine/cap.ts` | Homestead 10% cap floor: compares netAppraisedValue vs appraisedValue |
+| `src/engine/equity.ts` | Unequal-appraisal engine: filters comps (±40% sqft, same class), computes median $/sqft, indicated values (refined / class-matched / size-adjusted / land+building split). Exports `median()` helper. |
+| `src/engine/verdict.ts` | Ranks all indicated values + market + purchase evidence; picks the best argument that beats the cap floor; generates talking points |
+| `src/engine/run.ts` | Orchestrator: ties geocode → fetch → cap → equity → market → purchase → verdict into `runAnalysis()`. Returns `AnalysisResult`. |
+| `src/adapters/collin.ts` | Collin CAD via data.texas.gov Socrata API (`vffy-snc6`). Fields: `currvalland`, `currvalimprv`, `imprvmainarea`, `nbhdcode`. CORS-enabled. |
+| `src/adapters/denton.ts` | Denton CAD via ArcGIS REST (`Parcels_FC/MapServer/0`). Fields: `improvementValue`, `landHSValue`, `landNHSValue`, `ownerNetAppraisedValue`. CORS-enabled. Paginates at 500 records. |
+| `src/adapters/hpi.ts` | Embedded FHFA Dallas-Plano-Irving HPI (CBSA 19124), 2005 Q1–2026 Q1. `adjustToToday(price, dateStr)` ages a purchase price to today. Update `HPI` map and `HPI_LATEST_KEY` / `HPI_LATEST_INDEX` each quarter. |
+| `src/adapters/market.ts` | `fetchRentcastMarket()` (user-supplied key, CORS may fail), `buildManualMarket()` (user-entered comps). Never route requests through a public CORS proxy — that would leak the user's API key. |
+| `src/adapters/suggest.ts` | Address autocomplete: queries both Collin and Denton APIs in parallel for typeahead. |
+| `src/adapters/census.ts` | US Census geocoder for county detection. CORS-blocked in most browsers; app falls back to manual selection. |
+| `src/adapters/address.ts` | Address parsing and `sqlEscape()` used by adapters. |
+| `src/pdf/builder.ts` | Low-level pdf-lib helpers (page layout, text blocks, tables, KV rows). pdf-lib supports ASCII/WinAnsi only — no Unicode. |
+| `src/pdf/packet.ts` | `generateBoardPacket()` and `generatePersonalPacket()`. Both consume `AnalysisResult`. Purchase evidence and RentCast error are handled here. |
+| `src/App.tsx` | Main UI: address input, advanced panel (manual comps, purchase price, RentCast key), results dashboard, `HowItWorks` + `RealExamples` landing sections. |
+| `src/constants.ts` | `PROTEST_DEADLINE`, `COMPTROLLER_FORM`, `DISCLAIMER`. Update deadline each year. |
+| `src/format.ts` | `fmtUSD`, `fmtPsf`, `fmtNum`. |
+
+## Data sources
+
+- **Collin CAD** — `https://data.texas.gov/resource/vffy-snc6.json` (Socrata SODA)
+  - Does **not** publish the homestead-capped value. Cap check infers from prior-year value + 10%.
+  - Resource ID changes annually when the new roll is published. Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts`.
+- **Denton CAD** — `https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query`
+  - Publishes `ownerNetAppraisedValue` (homestead-capped value). Updates in place (no ID change).
+  - Max 500 records per page; adapter paginates automatically.
+- **FHFA HPI** — embedded in `src/adapters/hpi.ts`. Source CSV: `https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.csv`. CBSA 19124 (Dallas-Plano-Irving MSAD).
+- **RentCast AVM** — `https://api.rentcast.io/v1/avm/value`. User-supplied key, browser fetch. May be CORS-blocked (explicit error surfaced; falls back to manual comps).
+
+## Conventions
+
+- **Browser-only static app.** Do not add a server or backend unless the repo is explicitly extended for that purpose.
+- **County adapter pattern.** Adding a new county means: new `src/adapters/<county>.ts` + register in `src/engine/run.ts` + add to `County` union in `src/types.ts` + badge color in `App.tsx`.
+- **No CORS proxies for user keys.** If RentCast is CORS-blocked, surface a clear message and fall back — never route through a public proxy.
+- **pdf-lib encoding.** ASCII/WinAnsi only. No Unicode arrows or special characters in PDF text.
+- **Equity engine comp filters.** Refined comps: ±20% sqft, same class, minimum 5. Falls back to ±40% if fewer than 5 refined. Land+split requires ≥3 comps with both `landValue > 0` and `improvementValue > 0`.
+- **Homestead cap logic.** Collin doesn't publish net appraised — `computeCapFloor` infers from prior-year value + 10%. Denton publishes `ownerNetAppraisedValue` directly.
+- **Vite base path.** Must match repo name for GitHub Pages asset resolution. Set in `vite.config.ts`.
+- **Keep user-facing messaging aligned with the disclaimer:** this is not legal or tax advice.
+
+## Deployment
+
+Every push to `main` triggers `.github/workflows/deploy.yml` (build → `upload-pages-artifact` → `deploy-pages`). Pages source must be set to "GitHub Actions" in repo settings — the `configure-pages` step 404s otherwise.
+
+Live site: <https://venkatesanps.github.io/property-protest/>
+
+## Annual maintenance checklist
+
+- Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts` when new Collin roll publishes.
+- Update `PROTEST_DEADLINE` in `src/constants.ts` (typically May 15 each year).
+- Update `HPI` table, `HPI_LATEST_KEY`, and `HPI_LATEST_INDEX` in `src/adapters/hpi.ts` each quarter (FHFA releases ~2 months after quarter end).
+- Refresh `EXAMPLE_PROPERTIES` in `App.tsx` (the Real Examples landing section) if values shift significantly.
