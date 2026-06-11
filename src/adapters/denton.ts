@@ -37,8 +37,14 @@ interface DentonAttrs {
   exemptions?: string;
 }
 
+interface ArcGisFeature {
+  attributes: DentonAttrs;
+  /** Parcel centroid, present when the query asks for it (outSR=4326 → lng/lat). */
+  centroid?: { x: number; y: number };
+}
+
 interface ArcGisResponse {
-  features?: { attributes: DentonAttrs }[];
+  features?: ArcGisFeature[];
   error?: { message?: string };
 }
 
@@ -53,11 +59,22 @@ const COMP_FIELDS =
 
 const n = (v?: number): number => (typeof v === 'number' ? v : 0);
 
-async function query(where: string, outFields: string, offset = 0): Promise<DentonAttrs[]> {
+async function query(
+  where: string,
+  outFields: string,
+  offset = 0,
+  withCentroid = false
+): Promise<ArcGisFeature[]> {
   const url = new URL(BASE);
   url.searchParams.set('where', where);
   url.searchParams.set('outFields', outFields);
   url.searchParams.set('returnGeometry', 'false');
+  if (withCentroid) {
+    // Parcel centroid in WGS84 — feeds the FEMA flood-zone lookup without
+    // needing the (CORS-blocked) Census geocoder. Ignored by older servers.
+    url.searchParams.set('returnCentroid', 'true');
+    url.searchParams.set('outSR', '4326');
+  }
   url.searchParams.set('resultOffset', String(offset));
   url.searchParams.set('resultRecordCount', String(PAGE));
   url.searchParams.set('f', 'json');
@@ -66,10 +83,11 @@ async function query(where: string, outFields: string, offset = 0): Promise<Dent
   if (!resp.ok) throw new Error(`Denton ArcGIS error ${resp.status}`);
   const data = (await resp.json()) as ArcGisResponse;
   if (data.error) throw new Error(`Denton ArcGIS: ${data.error.message ?? 'query failed'}`);
-  return (data.features ?? []).map((f) => f.attributes);
+  return data.features ?? [];
 }
 
-function toSubject(a: DentonAttrs): SubjectProperty {
+function toSubject(f: ArcGisFeature): SubjectProperty {
+  const a = f.attributes;
   return {
     account: String(a.pid ?? ''),
     address: a.situs_full_address ?? '',
@@ -86,8 +104,13 @@ function toSubject(a: DentonAttrs): SubjectProperty {
     landValue: n(a.landHSValue) + n(a.landNHSValue),
     improvementValue: n(a.improvementValue),
     priorYearValue: null,
-    lat: null,
-    lng: null,
+    // The ArcGIS service serves the live roll and updates in place; the current
+    // tax year's values appear as DCAD loads them.
+    rollYear: new Date().getFullYear(),
+    rollLabel: 'Denton CAD live roll',
+    exemptions: a.exemptions ?? null,
+    lat: f.centroid?.y ?? null,
+    lng: f.centroid?.x ?? null,
   };
 }
 
@@ -115,10 +138,12 @@ export async function fetchDentonSubject(address: string): Promise<SubjectProper
 
   let feats = await query(
     `situs_full_address LIKE '${pattern}%' AND stateCodes='A1'`,
-    SUBJECT_FIELDS
+    SUBJECT_FIELDS,
+    0,
+    true
   );
   if (feats.length === 0) {
-    feats = await query(`situs_full_address LIKE '${pattern}%'`, SUBJECT_FIELDS);
+    feats = await query(`situs_full_address LIKE '${pattern}%'`, SUBJECT_FIELDS, 0, true);
   }
   if (feats.length === 0) {
     throw new Error(`No Denton County property found for "${address}". Check the address and try again.`);
@@ -128,7 +153,7 @@ export async function fetchDentonSubject(address: string): Promise<SubjectProper
 
 /** Exact lookup by pid — used when an autocomplete suggestion was selected. */
 export async function fetchDentonSubjectByAccount(pid: string): Promise<SubjectProperty> {
-  const feats = await query(`pid=${Number(pid)}`, SUBJECT_FIELDS);
+  const feats = await query(`pid=${Number(pid)}`, SUBJECT_FIELDS, 0, true);
   if (feats.length === 0) {
     throw new Error(`Denton County property ${pid} could not be loaded.`);
   }
@@ -147,7 +172,7 @@ export async function fetchDentonComps(
   let offset = 0;
   for (;;) {
     const pageRows = await query(where, COMP_FIELDS, offset);
-    all.push(...pageRows);
+    all.push(...pageRows.map((f) => f.attributes));
     if (pageRows.length < PAGE) break;
     offset += PAGE;
   }

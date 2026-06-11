@@ -2,17 +2,20 @@
  * Collin County Appraisal District adapter
  *
  * Data source: Texas Open Data Portal — Socrata SODA API
- * Dataset: 2025 Appraisal Roll
- * Base URL: https://data.texas.gov/resource/vffy-snc6.json
+ *
+ * Collin publishes a NEW resource each tax year (plus a year-less "Preliminary"
+ * dataset that carries the current year's notice values during protest season).
+ * COLLIN_SOURCES lists them newest-first; at runtime the adapter probes each one
+ * with the exact field set it needs and uses the first that answers, so the app
+ * automatically picks up the new year's values without a code change — and falls
+ * back to the last certified roll if the schema ever drifts.
  *
  * CORS: Socrata endpoints are CORS-enabled — browser-direct fetch works.
  * No API key required for read access (add app token via VITE_SOCRATA_APP_TOKEN
  * to raise the per-IP rate limit from ~1 req/s to 1000 req/s).
  *
- * NOTE: This dataset does NOT expose a homestead-cap / net-appraised field.
+ * NOTE: These datasets do NOT expose a homestead-cap / net-appraised field.
  * The equity engine's cap-floor check will show "unavailable" for Collin properties.
- *
- * To update the dataset for a future tax year, change COLLIN_RESOURCE_ID.
  */
 
 import type { SubjectProperty, Comp } from '../types';
@@ -20,11 +23,23 @@ import { parseAddress, sqlEscape } from './address';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-/** Resource ID of the Collin County appraisal roll on data.texas.gov.
- *  Change this each year when the new roll is published. */
-export const COLLIN_RESOURCE_ID = 'vffy-snc6'; // 2025 roll
+interface CollinSource {
+  id: string;
+  /** Label used when the roll year can't be read from the data itself. */
+  label: string;
+}
 
-const BASE_URL = `https://data.texas.gov/resource/${COLLIN_RESOURCE_ID}.json`;
+/** Candidate appraisal-roll resources on data.texas.gov, newest-first.
+ *  Add the new certified roll's resource ID at the top each year. */
+const COLLIN_SOURCES: CollinSource[] = [
+  { id: 'nne4-8riu', label: 'preliminary roll' }, // "Collin CAD Appraisal Data - Preliminary"
+  { id: 'vffy-snc6', label: '2025 certified roll' }, // "Collin CAD Appraisal Data - 2025"
+];
+
+/** Default resource (last certified roll) — used before the probe resolves. */
+export const COLLIN_RESOURCE_ID = 'vffy-snc6';
+
+const resourceUrl = (id: string) => `https://data.texas.gov/resource/${id}.json`;
 
 /** Optional Socrata app token — set VITE_SOCRATA_APP_TOKEN in .env.local. */
 const APP_TOKEN = import.meta.env.VITE_SOCRATA_APP_TOKEN as string | undefined;
@@ -78,6 +93,9 @@ function toSubject(row: CollinRow): SubjectProperty {
     landValue: num(row.currvalland),
     improvementValue: num(row.currvalimprv),
     priorYearValue: row.prevvalappraised ? num(row.prevvalappraised) : null,
+    rollYear: resolvedRoll?.year ?? null,
+    rollLabel: `Collin CAD ${resolvedRoll?.label ?? 'appraisal roll'}`,
+    exemptions: null,
     lat: null,
     lng: null,
   };
@@ -109,8 +127,109 @@ function makeHeaders(): HeadersInit {
   return h;
 }
 
+const SUBJECT_SELECT =
+  'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
+  'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
+  'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
+  'prevvalmarket,prevvalappraised,noticevalappraised,noticedate';
+
+// ── Roll resolution ───────────────────────────────────────────────────────────
+
+export interface CollinRollInfo {
+  id: string;
+  year: number | null;
+  /** e.g. "2026 preliminary roll" or "2025 certified roll". */
+  label: string;
+}
+
+const ROLL_CACHE_KEY = 'protest.collinRoll.v1';
+const ROLL_CACHE_TTL = 24 * 60 * 60 * 1000; // re-probe daily
+
+let resolvedRoll: CollinRollInfo | null = null;
+let resolving: Promise<CollinRollInfo> | null = null;
+
+function readRollCache(): CollinRollInfo | null {
+  try {
+    const raw = sessionStorage.getItem(ROLL_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as CollinRollInfo & { ts: number };
+    if (Date.now() - c.ts > ROLL_CACHE_TTL) return null;
+    if (!COLLIN_SOURCES.some((s) => s.id === c.id)) return null;
+    return { id: c.id, year: c.year, label: c.label };
+  } catch {
+    return null; // no sessionStorage (node) or corrupt cache
+  }
+}
+
+function writeRollCache(info: CollinRollInfo) {
+  try {
+    sessionStorage.setItem(ROLL_CACHE_KEY, JSON.stringify({ ...info, ts: Date.now() }));
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Probe one resource: must answer the full subject field set with ≥1 'A' row. */
+async function probeSource(src: CollinSource): Promise<CollinRollInfo | null> {
+  try {
+    const url = new URL(resourceUrl(src.id));
+    url.searchParams.set('$select', SUBJECT_SELECT);
+    url.searchParams.set('$where', "propcategorycode='A'");
+    url.searchParams.set('$order', 'noticedate DESC');
+    url.searchParams.set('$limit', '1');
+    const resp = await fetch(url.toString(), { headers: makeHeaders() });
+    if (!resp.ok) return null; // 400 = schema mismatch, 404 = gone
+    const rows = (await resp.json()) as CollinRow[];
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const yearMatch = rows[0].noticedate?.match(/(\d{4})/);
+    const year = yearMatch ? Number(yearMatch[1]) : null;
+    const baseLabel = src.label.replace(/^\d{4}\s*/, '');
+    return { id: src.id, year, label: year != null ? `${year} ${baseLabel}` : src.label };
+  } catch {
+    return null;
+  }
+}
+
+/** Pick the newest Collin resource that actually answers our queries. */
+async function resolveCollinRoll(): Promise<CollinRollInfo> {
+  if (resolvedRoll) return resolvedRoll;
+  if (resolving) return resolving;
+  resolving = (async () => {
+    const cached = readRollCache();
+    if (cached) {
+      resolvedRoll = cached;
+      return cached;
+    }
+    for (const src of COLLIN_SOURCES) {
+      const info = await probeSource(src);
+      if (info) {
+        resolvedRoll = info;
+        writeRollCache(info);
+        return info;
+      }
+    }
+    // Every probe failed (offline?) — fall back to the last certified roll so the
+    // real lookup can surface its own, more useful error.
+    const fallback = COLLIN_SOURCES[COLLIN_SOURCES.length - 1];
+    resolvedRoll = { id: fallback.id, year: null, label: fallback.label };
+    return resolvedRoll;
+  })();
+  return resolving;
+}
+
+/** Resolved SODA endpoint — shared with the autocomplete adapter. */
+export async function collinBaseUrl(): Promise<string> {
+  const { id } = await resolveCollinRoll();
+  return resourceUrl(id);
+}
+
+/** Vintage of the roll in use (null until the first query resolves it). */
+export function getCollinRollInfo(): CollinRollInfo | null {
+  return resolvedRoll;
+}
+
 async function soql<T>(params: Record<string, string>): Promise<T[]> {
-  const url = new URL(BASE_URL);
+  const url = new URL(await collinBaseUrl());
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const resp = await fetch(url.toString(), { headers: makeHeaders() });
   if (!resp.ok) {
@@ -132,11 +251,7 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
 
   const rows = await soql<CollinRow>({
     $where: `situsbldgnum='${sqlEscape(bldgNum)}' AND situsstreetname LIKE '${sqlEscape(streetName)}%' AND propcategorycode='A'`,
-    $select:
-      'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
-      'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
-      'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
-      'prevvalmarket,prevvalappraised,noticevalappraised,noticedate',
+    $select: SUBJECT_SELECT,
     $limit: '5',
   });
 
@@ -150,11 +265,7 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
 export async function fetchCollinSubjectByAccount(propid: string): Promise<SubjectProperty> {
   const rows = await soql<CollinRow>({
     $where: `propid='${sqlEscape(propid)}'`,
-    $select:
-      'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
-      'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
-      'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
-      'prevvalmarket,prevvalappraised,noticevalappraised,noticedate',
+    $select: SUBJECT_SELECT,
     $limit: '1',
   });
   if (rows.length === 0) {

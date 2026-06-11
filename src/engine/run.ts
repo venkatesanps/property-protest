@@ -116,8 +116,24 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
     subject.lng = geocode.lng;
   }
 
+  // Coordinates feed the flood-zone lookup. Denton supplies a parcel centroid;
+  // for Collin (no geometry in the Socrata roll) try the Census geocoder as a
+  // best-effort fallback, in parallel with the comp fetch so it costs no time.
+  const coordsPromise =
+    subject.lat == null || subject.lng == null
+      ? geocodeAddress(subject.address || address).catch(() => null)
+      : null;
+
   onStep?.('loading_comps');
   const comps = await fetchComps(subject);
+
+  if (coordsPromise) {
+    const geo = await coordsPromise;
+    if (geo) {
+      subject.lat = geo.lat;
+      subject.lng = geo.lng;
+    }
+  }
 
   const capFloor = computeCapFloor(subject);
   const equity = computeEquity(subject, comps);

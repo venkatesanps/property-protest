@@ -10,7 +10,7 @@ import {
 } from './pdf/packet';
 import { fmtUSD, fmtNum, fmtPsf } from './format';
 import { adjustToToday } from './adapters/hpi';
-import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM } from './constants';
+import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
 
 const STEP_LABEL: Record<AppStep, string> = {
   input: '',
@@ -449,6 +449,11 @@ function Results({
   onDownload: (kind: 'board' | 'personal') => void;
 }) {
   const { subject, capFloor, equity, market, purchase, rentcastError, floodZone, condition, characteristics, verdict } = result;
+  const season = protestSeason();
+  // Warn from April on, when the current year's notices exist but the dataset
+  // may still be serving last year's certified values.
+  const staleRoll =
+    subject.rollYear != null && subject.rollYear < season.taxYear && new Date().getMonth() >= 3;
   const isProtest = verdict.code === 'protest';
   const tone = isProtest
     ? 'border-emerald-200 bg-emerald-50'
@@ -511,6 +516,7 @@ function Results({
           </span>
         </div>
         <p className="mt-1 text-sm text-slate-500">{subject.address}</p>
+        <p className="mt-0.5 text-xs text-slate-400">Values from the {subject.rollLabel}.</p>
         <div className="mt-5 grid grid-cols-2 gap-5 sm:grid-cols-4">
           <Stat label="Appraised" value={fmtUSD(subject.appraisedValue)} />
           <Stat label="Market" value={fmtUSD(subject.marketValue)} />
@@ -532,6 +538,24 @@ function Results({
             homestead exemption, check your appraisal notice before protesting.
           </Note>
         )}
+        {staleRoll && (
+          <Note tone="warn">
+            These values are from the {subject.rollYear} roll — the {season.taxYear} values on your
+            appraisal notice may differ. Use the numbers on your notice for filing; this analysis
+            is still valid as relative evidence among neighbors.
+          </Note>
+        )}
+        {subject.county === 'denton' &&
+          !capFloor.isCapped &&
+          !/\bHS\b|HOMESTEAD/i.test(subject.exemptions ?? '') && (
+            <Note tone="warn">
+              No homestead exemption appears on this record
+              {subject.exemptions ? ` (codes: ${subject.exemptions})` : ''}. If this is your
+              primary residence, filing the exemption is free, can be backdated up to two years,
+              and usually saves more than a protest — check your record at the Denton CAD before
+              your hearing.
+            </Note>
+          )}
       </section>
 
       {/* equity */}
@@ -747,21 +771,79 @@ function Results({
         </section>
       )}
 
-      {/* how to file */}
+      {/* what to do now — phase-aware for the protest calendar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="font-semibold text-slate-900">How to file</h3>
-        <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
-          <li>
-            File Comptroller Form {COMPTROLLER_FORM} with your appraisal district by{' '}
-            {PROTEST_DEADLINE} (or 30 days after your notice).
-          </li>
-          <li>Check both grounds: &ldquo;over market value&rdquo; and &ldquo;unequal appraisal.&rdquo;</li>
-          <li>Attach the <strong>board evidence packet</strong> above.</li>
-          <li>
-            Keep the <strong>hearing playbook</strong> for yourself — it has your talking points and
-            what to bring.
-          </li>
-        </ol>
+        <h3 className="font-semibold text-slate-900">What to do now</h3>
+        {season.phase === 'filing' && (
+          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
+            <li>
+              File Comptroller Form {COMPTROLLER_FORM} with your appraisal district by{' '}
+              {PROTEST_DEADLINE} (or 30 days after your notice).
+            </li>
+            <li>Check both grounds: &ldquo;over market value&rdquo; and &ldquo;unequal appraisal.&rdquo;</li>
+            <li>Attach the <strong>board evidence packet</strong> above.</li>
+            <li>
+              Keep the <strong>hearing playbook</strong> for yourself — it has your talking points and
+              what to bring.
+            </li>
+          </ol>
+        )}
+        {season.phase === 'hearing' && (
+          <div className="mt-3 space-y-3 text-sm text-slate-600">
+            <div>
+              <p className="font-medium text-slate-700">Already filed your protest?</p>
+              <ol className="mt-1 list-decimal space-y-1.5 pl-5">
+                <li>
+                  Request the CAD&apos;s evidence for your hearing (Tex. Tax Code §41.461 — they must
+                  provide it free at least 14 days before the hearing). If their own comps support
+                  you, attach them.
+                </li>
+                <li>
+                  Try the <strong>informal review</strong> with a district appraiser first — most
+                  reductions happen there. Bring the <strong>board evidence packet</strong>.
+                </li>
+                <li>
+                  At the ARB hearing, follow the <strong>hearing playbook</strong>: state the
+                  requested value, walk the comp table, stop talking.
+                </li>
+              </ol>
+            </div>
+            <div>
+              <p className="font-medium text-slate-700">
+                Missed the {PROTEST_DEADLINE} deadline?
+              </p>
+              <ol className="mt-1 list-decimal space-y-1.5 pl-5">
+                <li>
+                  You can still file a <strong>late protest for good cause</strong> (§41.44(b)) until
+                  the ARB approves the appraisal records — typically mid-July. File Form{' '}
+                  {COMPTROLLER_FORM} now with a written good-cause explanation.
+                </li>
+                <li>
+                  After that, a <strong>§25.25 motion</strong> can still correct clerical errors
+                  (25.25(c)) or a substantial over-appraisal (25.25(d), value more than one-third —
+                  one-fourth for homesteads — above correct) before taxes go delinquent.
+                </li>
+              </ol>
+            </div>
+          </div>
+        )}
+        {season.phase === 'planning' && (
+          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
+            <li>
+              The regular {season.taxYear} protest window has closed. A <strong>§25.25 motion</strong>{' '}
+              can still fix clerical errors (25.25(c)) or a substantial over-appraisal (25.25(d))
+              before taxes go delinquent on Feb 1.
+            </li>
+            <li>
+              Verify your <strong>homestead exemption</strong> is on file — it&apos;s free and caps
+              taxable-value growth at 10%/year.
+            </li>
+            <li>
+              Save this analysis and your evidence — when the {season.taxYear + 1} notice arrives in
+              April, you&apos;ll be ready to file by {PROTEST_DEADLINE}.
+            </li>
+          </ol>
+        )}
       </section>
     </div>
   );

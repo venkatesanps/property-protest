@@ -11,7 +11,7 @@
  */
 
 import type { County } from '../types';
-import { COLLIN_RESOURCE_ID } from './collin';
+import { collinBaseUrl } from './collin';
 
 export interface AddressSuggestion {
   /** Pretty, title-cased label for the dropdown. */
@@ -23,7 +23,6 @@ export interface AddressSuggestion {
   account: string;
 }
 
-const COLLIN_BASE = `https://data.texas.gov/resource/${COLLIN_RESOURCE_ID}.json`;
 const DENTON_BASE =
   'https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query';
 
@@ -44,7 +43,9 @@ function prettyAddress(raw: string): string {
 const esc = (s: string) => s.replace(/'/g, "''");
 
 async function suggestCollin(prefix: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
-  const url = new URL(COLLIN_BASE);
+  // Same resolved resource as the subject/comps queries (2026 preliminary roll
+  // when available, falling back to the last certified roll).
+  const url = new URL(await collinBaseUrl());
   url.searchParams.set('$select', 'propid,situsconcat');
   url.searchParams.set(
     '$where',

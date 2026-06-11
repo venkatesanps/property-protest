@@ -56,9 +56,12 @@ Address input → Census geocoder (county detection, often CORS-fails)
 
 ## Data sources
 
-- **Collin CAD** — `https://data.texas.gov/resource/vffy-snc6.json` (Socrata SODA)
+- **Collin CAD** — data.texas.gov Socrata SODA. The adapter probes `COLLIN_SOURCES`
+  (newest-first: `nne4-8riu` "Preliminary", then `vffy-snc6` "2025 certified") at runtime
+  and uses the first resource that answers its full subject field set; the resolved
+  vintage is exposed as `SubjectProperty.rollYear` / `rollLabel` and shown in UI + PDFs.
   - Does **not** publish the homestead-capped value. Cap check infers from prior-year value + 10%.
-  - Resource ID changes annually when the new roll is published. Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts`.
+  - When a new certified roll is published, add its resource ID to the top of `COLLIN_SOURCES`.
 - **Denton CAD** — `https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query`
   - Publishes `ownerNetAppraisedValue` (homestead-capped value). Updates in place (no ID change).
   - Max 500 records per page; adapter paginates automatically.
@@ -84,7 +87,8 @@ Live site: <https://venkatesanps.github.io/property-protest/>
 
 ## Annual maintenance checklist
 
-- Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts` when new Collin roll publishes.
-- Update `PROTEST_DEADLINE` in `src/constants.ts` (typically May 15 each year).
+- Add the new Collin certified roll's resource ID to the top of `COLLIN_SOURCES` in `src/adapters/collin.ts`.
+- `protestSeason()` in `src/constants.ts` drives the date-aware "What to do now" guidance
+  (filing → hearing → planning); verify the phase boundaries still match the statute each year.
 - Update `HPI` table, `HPI_LATEST_KEY`, and `HPI_LATEST_INDEX` in `src/adapters/hpi.ts` each quarter (FHFA releases ~2 months after quarter end).
 - Refresh `EXAMPLE_PROPERTIES` in `App.tsx` (the Real Examples landing section) if values shift significantly.

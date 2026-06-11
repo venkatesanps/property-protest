@@ -21,6 +21,12 @@ export interface SubjectProperty {
   landValue: number;
   improvementValue: number;
   priorYearValue: number | null;
+  /** Tax year of the appraisal roll the values came from (null if unknown). */
+  rollYear: number | null;
+  /** Human label for the data vintage, e.g. "2026 preliminary roll". */
+  rollLabel: string;
+  /** Raw exemption codes from the roll (Denton only; null when not published). */
+  exemptions: string | null;
   lat: number | null;
   lng: number | null;
 }

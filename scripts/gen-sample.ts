@@ -56,6 +56,9 @@ async function main() {
     landValue: num(s.currvalland),
     improvementValue: num(s.currvalimprv),
     priorYearValue: s.prevvalappraised ? num(s.prevvalappraised) : null,
+    rollYear: null,
+    rollLabel: 'Collin CAD appraisal roll',
+    exemptions: null,
     lat: null,
     lng: null,
   };

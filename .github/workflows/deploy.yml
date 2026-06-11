@@ -26,6 +26,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Optional free Socrata app token — raises the data.texas.gov rate limit
+          # for autocomplete/lookups. No-op when the secret is not set.
+          VITE_SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

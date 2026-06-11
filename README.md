@@ -191,7 +191,7 @@ The app is a county router + per-county adapters. To add a new county:
 
 - **Census geocoder CORS:** automatic county detection usually fails from a browser. The app detects this and asks you to pick a county manually — no loss of function.
 - **RentCast CORS:** the market API may not send CORS headers. The app catches this, shows a clear amber message, and falls back to manual comps. The key is never routed through a proxy to avoid leaking it to a third party.
-- **Appraisal rolls are annual.** When Collin publishes a new year's roll, update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts`. Denton's ArcGIS service updates in place.
+- **Appraisal rolls are annual.** The Collin adapter probes a newest-first list of data.texas.gov resources (`COLLIN_SOURCES` in `src/adapters/collin.ts`) at runtime — currently the year-less *Preliminary* dataset, falling back to the 2025 certified roll — and shows the resolved roll vintage in the UI and PDFs. Add the new certified roll's resource ID to the top of that list each year. Denton's ArcGIS service updates in place.
 - **HPI data is embedded.** `src/adapters/hpi.ts` contains the FHFA index through 2026 Q1. Update `HPI` and `HPI_LATEST_KEY` / `HPI_LATEST_INDEX` each quarter.
 - **Only Collin and Denton are supported.** The Frisco area spans both counties; ZIP 75036 in particular has homes in both.
 

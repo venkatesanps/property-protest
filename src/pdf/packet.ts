@@ -13,7 +13,7 @@
 
 import { rgb } from 'pdf-lib';
 import type { AnalysisResult } from '../engine/run';
-import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE } from '../constants';
+import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE, protestSeason } from '../constants';
 import { fmtUSD, fmtNum, fmtPsf } from '../format';
 import {
   createDoc,
@@ -175,7 +175,7 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
   titleBand(
     b,
     'Property Tax Protest - Evidence Packet',
-    `${countyLabel(subject.county)}   |   For the Appraisal Review Board   |   Generated ${new Date().toLocaleDateString('en-US')}`
+    `${countyLabel(subject.county)}   |   ${subject.rollLabel}   |   For the Appraisal Review Board   |   Generated ${new Date().toLocaleDateString('en-US')}`
   );
 
   // Requested value up top so the appraiser sees the ask immediately.
@@ -448,8 +448,12 @@ export async function generatePersonalPacket(result: AnalysisResult): Promise<Ui
 
   // ── How it works ──
   b.heading('How the Protest Works (3 steps)');
+  const fileStep =
+    protestSeason().phase === 'filing'
+      ? `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`
+      : `1. FILE. The regular ${PROTEST_DEADLINE} deadline has passed. If you have not filed, you may still submit Form ${COMPTROLLER_FORM} as a LATE protest for good cause (Tex. Tax Code 41.44(b)) until the ARB approves the records, or pursue a Sec. 25.25 correction motion. If you already filed, skip to step 2. Check BOTH boxes: "over market value" and "unequal appraisal."`;
   const steps = [
-    `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`,
+    fileStep,
     '2. INFORMAL MEETING. Most cases settle here. You meet one-on-one with a district appraiser, show your evidence, and they often make an offer on the spot. If the offer is close to your number, you can accept and you are done.',
     '3. FORMAL ARB HEARING. If you do not settle, you present to a 3-person Appraisal Review Board. It is informal - about 15 minutes. You speak, the district appraiser responds, the board decides that day.',
   ];
@@ -533,6 +537,12 @@ export function downloadPacket(bytes: Uint8Array, filename: string) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  // Safari (especially iOS) can cancel the download if the URL is revoked
+  // before the save sheet finishes with it.
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 10_000);
 }
