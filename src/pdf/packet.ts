@@ -39,7 +39,7 @@ function countyLabel(county: string): string {
 
 /** Numbers + arguments derived once, shared by both packets. */
 function derive(result: AnalysisResult) {
-  const { subject, capFloor, equity, market, verdict } = result;
+  const { subject, capFloor, equity, market, purchase, verdict } = result;
   const floor = capFloor.floor ?? subject.appraisedValue;
 
   // The value to request: verdict target, else the lowest indicated value we have.
@@ -50,6 +50,7 @@ function derive(result: AnalysisResult) {
     if (equity.indicatedValueSplit != null) indicated.push(equity.indicatedValueSplit);
   }
   if (market && market.estimatedValue > 0) indicated.push(market.estimatedValue);
+  if (purchase && purchase.marketValue > 0) indicated.push(purchase.marketValue);
   const requested =
     verdict.targetValue ?? (indicated.length ? Math.min(...indicated) : null);
 
@@ -60,10 +61,17 @@ function derive(result: AnalysisResult) {
 
   // ── Plain-English talking points, strongest first. ──
   const points: string[] = [];
-  if (market && market.source === 'purchase') {
-    points.push(
-      `You purchased this home recently for ${fmtUSD(market.estimatedValue)} in an arms-length sale - the single strongest indicator of market value.`
-    );
+  if (purchase) {
+    if (purchase.hpi) {
+      const pct = purchase.hpi.pctChange;
+      points.push(
+        `You purchased this home for ${fmtUSD(purchase.price)} (${purchase.hpi.fromLabel}). Aged to today with the ${purchase.hpi.area} FHFA House Price Index (${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% since), that is about ${fmtUSD(purchase.marketValue)} in current-market terms.`
+      );
+    } else {
+      points.push(
+        `You purchased this home recently for ${fmtUSD(purchase.price)} in an arms-length sale - the single strongest indicator of market value.`
+      );
+    }
   }
   if (equity) {
     points.push(
@@ -274,6 +282,32 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
         ]),
         [MARGIN, MARGIN + 230, MARGIN + 310, MARGIN + 390, MARGIN + 460]
       );
+    }
+  }
+
+  // ── Recent purchase / HPI ──
+  if (result.purchase) {
+    const p = result.purchase;
+    b.heading('Recent Purchase Evidence');
+    b.kv('Purchase price', fmtUSD(p.price));
+    if (p.date) b.kv('Purchase date', p.date);
+    if (p.hpi) {
+      b.kv(
+        'Aged to today (FHFA HPI)',
+        `${fmtUSD(p.marketValue)}  (${p.hpi.fromLabel} -> ${p.hpi.toLabel}, ${p.hpi.pctChange >= 0 ? '+' : ''}${p.hpi.pctChange.toFixed(1)}%)`,
+        NAVY
+      );
+      b.wrap(
+        `Current-market estimate derived from the ${p.hpi.area} FHFA House Price Index ` +
+          '(a public, area-wide index of home-price change). It ages the actual purchase ' +
+          'price to the present; it is an area average, not a property-specific appraisal.',
+        { size: 9, color: GRAY }
+      );
+    } else {
+      b.wrap('A recent arms-length purchase is the strongest single indicator of market value.', {
+        size: 9,
+        color: GRAY,
+      });
     }
   }
 

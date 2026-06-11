@@ -35,11 +35,32 @@ export async function fetchRentcastMarket(
 ): Promise<MarketValueResult> {
   const url = new URL(RENTCAST);
   url.searchParams.set('address', address);
-  const resp = await fetch(url.toString(), {
-    headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
-  });
+
+  // NOTE: we deliberately do NOT route the request through a public CORS proxy.
+  // That would expose the user's private API key to a third party. If the
+  // browser blocks the direct call, we surface a clear message and fall back to
+  // manual comps instead.
+  let resp: Response;
+  try {
+    resp = await fetch(url.toString(), {
+      headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
+    });
+  } catch {
+    // fetch() rejects on a network failure OR a CORS block (the response is
+    // opaque, so we can't tell which) — both land here.
+    throw new Error(
+      'RentCast could not be reached from the browser (likely a CORS block). ' +
+        'Your manual comps are used instead. To use RentCast, call it from a small backend/proxy with your key.'
+    );
+  }
   if (!resp.ok) {
-    throw new Error(`RentCast error ${resp.status} (check your API key / monthly quota)`);
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('RentCast rejected the API key (401/403). Double-check the key in Advanced options.');
+    }
+    if (resp.status === 402 || resp.status === 429) {
+      throw new Error('RentCast quota reached (free tier is 50 lookups/month). Using manual comps instead.');
+    }
+    throw new Error(`RentCast error ${resp.status}. Using manual comps instead.`);
   }
   const d = (await resp.json()) as RentcastResponse;
   const comps = (d.comparables ?? []).map((c) => {
@@ -67,11 +88,15 @@ export function buildManualMarket(
   manualComps: ManualComp[]
 ): MarketValueResult | null {
   const valid = manualComps.filter((c) => c.salePrice > 0 && c.livingAreaSqft > 0);
-  if (valid.length === 0) return null;
-  const med = median(valid.map((c) => c.salePrice / c.livingAreaSqft));
+  if (valid.length === 0 || subjectSqft <= 0) return null;
+  // Each comp implies a subject value at its own $/sqft; the estimate is the
+  // median of those, and the range is the spread across the comps.
+  const implied = valid.map((c) => (c.salePrice / c.livingAreaSqft) * subjectSqft);
   return {
     source: 'manual',
-    estimatedValue: Math.round(med * subjectSqft),
+    estimatedValue: Math.round(median(valid.map((c) => c.salePrice / c.livingAreaSqft)) * subjectSqft),
+    lowRange: Math.round(Math.min(...implied)),
+    highRange: Math.round(Math.max(...implied)),
     comparables: valid.map((c) => ({
       address: c.address,
       salePrice: c.salePrice,

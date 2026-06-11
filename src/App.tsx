@@ -9,6 +9,7 @@ import {
   downloadPacket,
 } from './pdf/packet';
 import { fmtUSD, fmtNum, fmtPsf } from './format';
+import { adjustToToday } from './adapters/hpi';
 import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM } from './constants';
 
 const STEP_LABEL: Record<AppStep, string> = {
@@ -407,7 +408,7 @@ function Results({
   result: AnalysisResult;
   onDownload: (kind: 'board' | 'personal') => void;
 }) {
-  const { subject, capFloor, equity, market, verdict } = result;
+  const { subject, capFloor, equity, market, purchase, rentcastError, verdict } = result;
   const isProtest = verdict.code === 'protest';
   const tone = isProtest
     ? 'border-emerald-200 bg-emerald-50'
@@ -534,6 +535,35 @@ function Results({
         </section>
       )}
 
+      {/* recent purchase (HPI-aged) */}
+      {purchase && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="font-semibold text-slate-900">Recent purchase evidence</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            An arms-length sale is the strongest market evidence. Older purchases are aged to
+            today&apos;s market with the public FHFA House Price Index.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3">
+            <Stat label="You paid" value={fmtUSD(purchase.price)} />
+            {purchase.date && <Stat label="Purchase date" value={purchase.date} />}
+            <Stat
+              label={purchase.hpi ? "Today's market (aged)" : 'Market value'}
+              value={fmtUSD(purchase.marketValue)}
+              accent
+            />
+          </div>
+          {purchase.hpi && (
+            <p className="mt-3 text-xs text-slate-500">
+              {purchase.hpi.area} index rose{' '}
+              {purchase.hpi.pctChange >= 0 ? '+' : ''}
+              {purchase.hpi.pctChange.toFixed(0)}% from {purchase.hpi.fromLabel} to{' '}
+              {purchase.hpi.toLabel}, so {fmtUSD(purchase.price)} then ≈{' '}
+              {fmtUSD(purchase.marketValue)} now.
+            </p>
+          )}
+        </section>
+      )}
+
       {/* market */}
       {market && market.estimatedValue > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -544,12 +574,25 @@ function Results({
               ? 'RentCast automated valuation'
               : market.source === 'purchase'
                 ? 'recent purchase price'
-                : 'your manual comps'}
+                : `your manual comps (${market.comparables?.length ?? 0})`}
           </p>
-          <div className="mt-4">
+          <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3">
             <Stat label="Estimated market value" value={fmtUSD(market.estimatedValue)} accent />
+            {market.lowRange != null && market.highRange != null && (
+              <Stat
+                label="Range across comps"
+                value={`${fmtUSD(market.lowRange)} – ${fmtUSD(market.highRange)}`}
+              />
+            )}
           </div>
         </section>
+      )}
+
+      {/* rentcast skipped */}
+      {rentcastError && (
+        <Note tone="warn">
+          RentCast was skipped: {rentcastError}
+        </Note>
       )}
 
       {/* how to file */}
@@ -643,11 +686,13 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-function Note({ children, tone }: { children: React.ReactNode; tone: 'info' | 'muted' }) {
+function Note({ children, tone }: { children: React.ReactNode; tone: 'info' | 'muted' | 'warn' }) {
   const cls =
     tone === 'info'
       ? 'border-sky-200 bg-sky-50 text-sky-800'
-      : 'border-slate-200 bg-slate-50 text-slate-500';
+      : tone === 'warn'
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : 'border-slate-200 bg-slate-50 text-slate-500';
   return <p className={`mt-4 rounded-lg border p-3 text-xs ${cls}`}>{children}</p>;
 }
 
@@ -754,9 +799,24 @@ function AdvancedPanel(props: {
             onChange={(e) => props.setPurchaseDate(e.target.value)}
             className={`mt-2 ${inp}`}
           />
-          <p className="mt-1 text-xs text-slate-500">
-            A recent arms-length sale is the strongest market evidence.
-          </p>
+          {(() => {
+            const adj = adjustToToday(Number(props.purchasePrice), props.purchaseDate);
+            if (adj) {
+              return (
+                <p className="mt-1 text-xs text-emerald-700">
+                  ≈ {fmtUSD(adj.adjustedValue)} in today&apos;s market ({adj.area} HPI{' '}
+                  {adj.pctChange >= 0 ? '+' : ''}
+                  {adj.pctChange.toFixed(0)}% since {adj.fromLabel}).
+                </p>
+              );
+            }
+            return (
+              <p className="mt-1 text-xs text-slate-500">
+                A recent arms-length sale is the strongest market evidence. Add the date and we age it
+                to today with the public FHFA price index.
+              </p>
+            );
+          })()}
         </div>
         <div>
           <label className="block text-sm font-semibold text-slate-700">
@@ -777,7 +837,7 @@ function AdvancedPanel(props: {
 
       <div>
         <div className="flex items-center justify-between">
-          <label className="text-sm font-semibold text-slate-700">Manual comparable sales</label>
+          <label className="text-sm font-semibold text-slate-700">Recent comparable sales</label>
           <button
             type="button"
             onClick={props.addManualComp}
@@ -786,38 +846,67 @@ function AdvancedPanel(props: {
             + Add comp
           </button>
         </div>
-        {props.manualComps.map((c, i) => (
-          <div key={i} className="mt-2 grid grid-cols-12 gap-2">
-            <input
-              className="col-span-5 rounded border border-slate-300 px-2 py-1 text-sm"
-              placeholder="Address"
-              value={c.address}
-              onChange={(e) => props.updateComp(i, { address: e.target.value })}
-            />
-            <input
-              className="col-span-3 rounded border border-slate-300 px-2 py-1 text-sm"
-              placeholder="Sale price"
-              type="number"
-              value={c.salePrice || ''}
-              onChange={(e) => props.updateComp(i, { salePrice: Number(e.target.value) })}
-            />
-            <input
-              className="col-span-3 rounded border border-slate-300 px-2 py-1 text-sm"
-              placeholder="SqFt"
-              type="number"
-              value={c.livingAreaSqft || ''}
-              onChange={(e) => props.updateComp(i, { livingAreaSqft: Number(e.target.value) })}
-            />
-            <button
-              type="button"
-              onClick={() => props.removeComp(i)}
-              className="col-span-1 rounded text-slate-400 hover:text-red-600"
-              aria-label="Remove"
-            >
-              ×
-            </button>
+        <p className="mt-1 text-xs text-slate-500">
+          Actual sold prices on your street (a realtor friend can pull these from MLS). Texas hides
+          sale prices, so these are the strongest market evidence you can bring.
+        </p>
+        {props.manualComps.length > 0 && (
+          <div className="mt-2 grid grid-cols-12 gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            <span className="col-span-4">Address</span>
+            <span className="col-span-3">Sale price</span>
+            <span className="col-span-2">SqFt</span>
+            <span className="col-span-2">Sold date</span>
+            <span className="col-span-1" />
           </div>
-        ))}
+        )}
+        {props.manualComps.map((c, i) => {
+          const psf = c.salePrice > 0 && c.livingAreaSqft > 0 ? c.salePrice / c.livingAreaSqft : 0;
+          return (
+            <div key={i} className="mt-1">
+              <div className="grid grid-cols-12 gap-2">
+                <input
+                  className="col-span-4 rounded border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="123 Main St"
+                  value={c.address}
+                  onChange={(e) => props.updateComp(i, { address: e.target.value })}
+                />
+                <input
+                  className="col-span-3 rounded border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="Sale price"
+                  type="number"
+                  value={c.salePrice || ''}
+                  onChange={(e) => props.updateComp(i, { salePrice: Number(e.target.value) })}
+                />
+                <input
+                  className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="SqFt"
+                  type="number"
+                  value={c.livingAreaSqft || ''}
+                  onChange={(e) => props.updateComp(i, { livingAreaSqft: Number(e.target.value) })}
+                />
+                <input
+                  className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm"
+                  type="date"
+                  value={c.saleDate}
+                  onChange={(e) => props.updateComp(i, { saleDate: e.target.value })}
+                />
+                <button
+                  type="button"
+                  onClick={() => props.removeComp(i)}
+                  className="col-span-1 rounded text-slate-400 hover:text-red-600"
+                  aria-label="Remove comp"
+                >
+                  ×
+                </button>
+              </div>
+              {psf > 0 && (
+                <p className="mt-0.5 pr-8 text-right text-[11px] text-slate-500">
+                  {fmtPsf(psf)}/sqft
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <details className="text-sm">

@@ -112,6 +112,27 @@ export interface MarketComp {
   pricePerSqft: number;
 }
 
+/** Result of aging a known purchase price to today via the FHFA House Price Index. */
+export interface HpiAdjustment {
+  rawValue: number;       // the price as entered
+  adjustedValue: number;  // aged to the latest available quarter
+  fromLabel: string;      // e.g. "2021 Q2"
+  toLabel: string;        // e.g. "2026 Q1"
+  fromIndex: number;
+  toIndex: number;
+  pctChange: number;      // percent change in the index (can be negative)
+  area: string;           // e.g. "Dallas-Plano-Irving, TX"
+}
+
+/** A recent purchase the owner entered, optionally aged to today via HPI. */
+export interface PurchaseEvidence {
+  price: number;              // raw price entered
+  date: string | null;       // YYYY-MM-DD, or null if not given
+  hpi: HpiAdjustment | null;  // present only when a date is known
+  /** Value used as market evidence: HPI-adjusted when a date exists, else raw. */
+  marketValue: number;
+}
+
 /** Manual comp entered by the user. */
 export interface ManualComp {
   address: string;

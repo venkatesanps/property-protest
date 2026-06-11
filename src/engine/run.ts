@@ -14,7 +14,9 @@ import type {
   Verdict,
   ManualComp,
   Comp,
+  PurchaseEvidence,
 } from '../types';
+import { adjustToToday } from '../adapters/hpi';
 import { geocodeAddress } from '../adapters/census';
 import {
   fetchCollinSubject,
@@ -37,6 +39,10 @@ export interface AnalysisResult {
   capFloor: CapFloorResult;
   equity: EquityResult | null;
   market: MarketValueResult | null;
+  /** Recent-purchase evidence (HPI-aged to today), if the owner entered a price. */
+  purchase: PurchaseEvidence | null;
+  /** Why RentCast was skipped, if a key was given but the call failed. */
+  rentcastError: string | null;
   verdict: Verdict;
 }
 
@@ -105,22 +111,39 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
   const equity = computeEquity(subject, comps);
 
   let market: MarketValueResult | null = null;
+  let rentcastError: string | null = null;
   if (opts.rentcastKey) {
     try {
       market = await fetchRentcastMarket(address, opts.rentcastKey);
-    } catch {
-      market = null; // CORS or quota — fall back to manual comps
+    } catch (e) {
+      // CORS, bad key, or quota — record why, then fall back to manual comps.
+      rentcastError = e instanceof Error ? e.message : 'RentCast request failed.';
+      market = null;
     }
   }
   if (!market && opts.manualComps && opts.manualComps.length > 0) {
     market = buildManualMarket(subject.livingAreaSqft, opts.manualComps);
   }
 
+  // Recent purchase price: age it to today's market via the FHFA HPI when a date
+  // is known, so an older purchase becomes a current-market estimate. The aged
+  // (or raw) value is what the verdict treats as market evidence.
+  let purchase: PurchaseEvidence | null = null;
+  if (opts.recentPurchasePrice && opts.recentPurchasePrice > 0) {
+    const hpi = adjustToToday(opts.recentPurchasePrice, opts.recentPurchaseDate);
+    purchase = {
+      price: Math.round(opts.recentPurchasePrice),
+      date: opts.recentPurchaseDate ?? null,
+      hpi,
+      marketValue: hpi ? hpi.adjustedValue : Math.round(opts.recentPurchasePrice),
+    };
+  }
+
   const verdict = computeVerdict(subject, capFloor, equity, market, {
     repairEstimateTotal: opts.repairEstimateTotal,
-    recentPurchasePrice: opts.recentPurchasePrice,
+    recentPurchasePrice: purchase ? purchase.marketValue : undefined,
     recentPurchaseDate: opts.recentPurchaseDate,
   });
   onStep?.('results');
-  return { geocode, subject, capFloor, equity, market, verdict };
+  return { geocode, subject, capFloor, equity, market, purchase, rentcastError, verdict };
 }

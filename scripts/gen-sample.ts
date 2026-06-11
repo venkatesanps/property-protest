@@ -90,7 +90,7 @@ async function main() {
   const market = null;
   const verdict = computeVerdict(subject, capFloor, equity, market);
 
-  const analysis = { geocode: null, subject, capFloor, equity, market, verdict };
+  const analysis = { geocode: null, subject, capFloor, equity, market, purchase: null, rentcastError: null, verdict };
   writeFileSync(
     '/Users/venkatesanps/property-protest/sample-whistler-board.pdf',
     await generateBoardPacket(analysis)
