@@ -166,6 +166,7 @@ function App() {
               onChange={(v) => {
                 setAddress(v);
                 setSelected(null);
+                if (!v) { setResult(null); setError(null); }
               }}
               onSelect={(s) => {
                 setSelected(s);
@@ -228,7 +229,21 @@ function App() {
 
       {/* ── Results ─────────────────────────────────────────────── */}
       <main className="mx-auto max-w-5xl px-6 py-10">
-        {result && <Results result={result} onDownload={handleDownload} />}
+        {result && (
+          <>
+            <button
+              type="button"
+              onClick={() => { setResult(null); setAddress(''); setError(null); setSelected(null); }}
+              className="mb-6 flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l3.72 3.72a.75.75 0 1 1-1.06 1.06l-5-5a.75.75 0 0 1 0-1.06l5-5a.75.75 0 1 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+              </svg>
+              Search another property
+            </button>
+            <Results result={result} onDownload={handleDownload} />
+          </>
+        )}
         {!result && !busy && (
           <>
             <HowItWorks />
