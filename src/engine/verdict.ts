@@ -44,6 +44,9 @@ export function computeVerdict(
     if (equity.indicatedValueClassMatched != null) {
       equityOptions.push({ method: 'equity - same quality class', value: equity.indicatedValueClassMatched });
     }
+    if (equity.indicatedValueSplit != null) {
+      equityOptions.push({ method: 'equity - land + building split', value: equity.indicatedValueSplit });
+    }
     equityOptions.push({ method: 'equity - size adjusted', value: equity.indicatedValueSizeAdjusted });
     candidates.push(equityOptions.reduce((a, b) => (b.value < a.value ? b : a)));
   }

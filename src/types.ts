@@ -35,6 +35,10 @@ export interface Comp {
   qualityClass: string;
   appraisedValue: number;
   pricePerSqft: number;
+  /** CAD land value (0 if the county dataset didn't supply it for comps). */
+  landValue: number;
+  /** CAD improvement/building value (0 if not supplied). */
+  improvementValue: number;
   isRefined: boolean; // passes the ±20% size, ±12yr filter
 }
 
@@ -59,6 +63,17 @@ export interface EquityResult {
   sizeAdjMarginalRate: number;
   /** Median of size-adjusted comp values brought to subject size. */
   indicatedValueSizeAdjusted: number;
+  // ── land + building split (requires comp land/improvement values) ──
+  /** Median comp improvement (building) $ per living sqft. Null if comps lack the data. */
+  improvementMedianPsf: number | null;
+  /** Median comp land value (CAD land values are roughly uniform per lot in a nbhd). */
+  landMedianValue: number | null;
+  /** improvementMedianPsf x subject sqft — the indicated building value. */
+  indicatedImprovementValue: number | null;
+  /** landMedianValue — the indicated land value. */
+  indicatedLandValue: number | null;
+  /** indicatedImprovementValue + indicatedLandValue — total via the split method. */
+  indicatedValueSplit: number | null;
 }
 
 /** Result of the homestead-cap floor check. */

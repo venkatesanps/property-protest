@@ -55,6 +55,27 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
   );
   const indicatedValueSizeAdjusted = median(adjustedValues);
 
+  // ── land + building split: appraised value = land + improvement. Land values
+  // are CAD-set per lot and roughly uniform within a neighborhood, while the
+  // building is where over-appraisal hides. Compare each part on its own basis:
+  //   building -> median(comp improvement $/living-sqft) x subject sqft
+  //   land     -> median(comp land value)   (uniform per lot, no lot size needed)
+  // Total = indicated building + indicated land. Only runs when comps carry the
+  // land/improvement split (>=3 with both > 0); otherwise the fields stay null.
+  const splitComps = valid.filter((c) => c.improvementValue > 0 && c.landValue > 0);
+  let improvementMedianPsf: number | null = null;
+  let landMedianValue: number | null = null;
+  let indicatedImprovementValue: number | null = null;
+  let indicatedLandValue: number | null = null;
+  let indicatedValueSplit: number | null = null;
+  if (splitComps.length >= 3) {
+    improvementMedianPsf = median(splitComps.map((c) => c.improvementValue / c.livingAreaSqft));
+    landMedianValue = median(splitComps.map((c) => c.landValue));
+    indicatedImprovementValue = improvementMedianPsf * subject.livingAreaSqft;
+    indicatedLandValue = landMedianValue;
+    indicatedValueSplit = indicatedImprovementValue + indicatedLandValue;
+  }
+
   return {
     neighborhoodMedianPsf: medAll,
     refinedMedianPsf: medRefined,
@@ -71,5 +92,10 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
     indicatedValueClassMatched,
     sizeAdjMarginalRate,
     indicatedValueSizeAdjusted,
+    improvementMedianPsf,
+    landMedianValue,
+    indicatedImprovementValue,
+    indicatedLandValue,
+    indicatedValueSplit,
   };
 }

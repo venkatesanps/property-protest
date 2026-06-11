@@ -48,7 +48,8 @@ const SUBJECT_FIELDS =
   'imprvActualYearBuilt,imprvClasses,asCode,stateCodes,abstractSubdivisionDescription,geoID,exemptions';
 
 const COMP_FIELDS =
-  'pid,situs_full_address,imprvMainArea,imprvActualYearBuilt,imprvClasses,ownerAppraisedValue';
+  'pid,situs_full_address,imprvMainArea,imprvActualYearBuilt,imprvClasses,ownerAppraisedValue,' +
+  'improvementValue,landHSValue,landNHSValue';
 
 const n = (v?: number): number => (typeof v === 'number' ? v : 0);
 
@@ -102,6 +103,8 @@ function toComp(a: DentonAttrs): Comp {
     qualityClass: a.imprvClasses ?? '',
     appraisedValue: appraised,
     pricePerSqft: sqft > 0 ? appraised / sqft : 0,
+    landValue: n(a.landHSValue) + n(a.landNHSValue),
+    improvementValue: n(a.improvementValue),
     isRefined: false,
   };
 }

@@ -95,6 +95,8 @@ function toComp(row: CollinRow): Comp {
     qualityClass: row.imprvclasscd ?? '',
     appraisedValue: appraised,
     pricePerSqft: sqft > 0 ? appraised / sqft : 0,
+    landValue: num(row.currvalland),
+    improvementValue: num(row.currvalimprv),
     isRefined: false, // set by engine
   };
 }
@@ -173,7 +175,7 @@ export async function fetchCollinComps(
   const rows = await soql<CollinRow>({
     $where: `nbhdcode='${sqlEscape(neighborhoodCode)}' AND propcategorycode='A' AND imprvmainarea>0 AND currvalappraised>0`,
     $select:
-      'propid,situsconcat,imprvmainarea,imprvyearbuilt,imprvclasscd,currvalappraised',
+      'propid,situsconcat,imprvmainarea,imprvyearbuilt,imprvclasscd,currvalappraised,currvalland,currvalimprv',
     $limit: String(limit),
   });
   return rows

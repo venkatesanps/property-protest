@@ -62,7 +62,7 @@ async function main() {
 
   const rows = await soql<Row>(
     `nbhdcode='${subject.neighborhoodCode}' AND propcategorycode='A' AND imprvmainarea>0 AND currvalappraised>0`,
-    'propid,situsconcat,imprvmainarea,imprvyearbuilt,imprvclasscd,currvalappraised',
+    'propid,situsconcat,imprvmainarea,imprvyearbuilt,imprvclasscd,currvalappraised,currvalland,currvalimprv',
     500
   );
   const comps: Comp[] = rows
@@ -79,6 +79,8 @@ async function main() {
         qualityClass: r.imprvclasscd ?? '',
         appraisedValue: appr,
         pricePerSqft: sqft > 0 ? appr / sqft : 0,
+        landValue: num(r.currvalland),
+        improvementValue: num(r.currvalimprv),
         isRefined: false,
       };
     });

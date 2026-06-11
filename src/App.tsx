@@ -508,12 +508,25 @@ function Results({
               />
             )}
             <Stat label="Indicated (size adj.)" value={fmtUSD(equity.indicatedValueSizeAdjusted)} />
+            {equity.indicatedValueSplit != null && (
+              <Stat label="Indicated (land + bldg)" value={fmtUSD(equity.indicatedValueSplit)} accent />
+            )}
             <Stat label="Rank" value={`#${equity.subjectRankOf} of ${equity.neighborhoodCount}`} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
             Rank 1 = highest $/sqft (most over-appraised). You are appraised higher than{' '}
             {equity.percentileHigher.toFixed(0)}% of comparable homes.
           </p>
+          {equity.indicatedValueSplit != null &&
+            equity.indicatedLandValue != null &&
+            equity.indicatedImprovementValue != null && (
+              <p className="mt-1 text-xs text-slate-500">
+                Land + building split: {fmtUSD(equity.indicatedLandValue)} land +{' '}
+                {fmtUSD(equity.indicatedImprovementValue)} building (
+                {fmtPsf(equity.improvementMedianPsf ?? 0)}/sqft) ={' '}
+                {fmtUSD(equity.indicatedValueSplit)}.
+              </p>
+            )}
           <CompTable
             comps={equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps}
             subjectPsf={equity.subjectPsf}

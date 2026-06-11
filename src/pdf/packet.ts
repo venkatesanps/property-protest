@@ -47,6 +47,7 @@ function derive(result: AnalysisResult) {
   if (equity) {
     indicated.push(equity.indicatedValueRefined, equity.indicatedValueSizeAdjusted);
     if (equity.indicatedValueClassMatched != null) indicated.push(equity.indicatedValueClassMatched);
+    if (equity.indicatedValueSplit != null) indicated.push(equity.indicatedValueSplit);
   }
   if (market && market.estimatedValue > 0) indicated.push(market.estimatedValue);
   const requested =
@@ -79,6 +80,15 @@ function derive(result: AnalysisResult) {
     points.push(
       `After a size adjustment (larger homes carry lower $/sqft), comparable values indicate about ${fmtUSD(equity.indicatedValueSizeAdjusted)}.`
     );
+    if (
+      equity.indicatedValueSplit != null &&
+      equity.indicatedImprovementValue != null &&
+      equity.indicatedLandValue != null
+    ) {
+      points.push(
+        `Splitting land from building: neighborhood comps indicate about ${fmtUSD(equity.indicatedLandValue)} in land and ${fmtUSD(equity.indicatedImprovementValue)} in building (${fmtPsf(equity.improvementMedianPsf ?? 0)}/sqft), for an indicated total of about ${fmtUSD(equity.indicatedValueSplit)}.`
+      );
+    }
   }
   if (market && market.source !== 'purchase' && market.estimatedValue > 0) {
     points.push(
@@ -217,6 +227,17 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
       );
     }
     b.kv('Indicated value (size adjusted)', fmtUSD(equity.indicatedValueSizeAdjusted));
+    if (
+      equity.indicatedValueSplit != null &&
+      equity.indicatedLandValue != null &&
+      equity.indicatedImprovementValue != null
+    ) {
+      b.kv(
+        'Indicated value (land + building)',
+        `${fmtUSD(equity.indicatedValueSplit)}  (land ${fmtUSD(equity.indicatedLandValue)} + bldg ${fmtUSD(equity.indicatedImprovementValue)})`,
+        NAVY
+      );
+    }
     b.kv('Subject rank', `#${equity.subjectRankOf} of ${equity.neighborhoodCount} (1 = highest $/sqft)`);
     b.gap(4);
     b.text('Comparable properties (refined set, sorted by $/sqft):', { font: b.bold });
