@@ -1062,7 +1062,7 @@ const GROUNDS = [
       'A one-class downgrade typically reduces value by 10–20% at the district level',
     ],
     links: [
-      { label: 'Collin CAD property search', url: 'https://www.collincountytx.gov/appraisal-district/property-search' },
+      { label: 'Collin CAD property search', url: 'https://esearch.collincad.org/' },
       { label: 'Denton CAD property search', url: 'https://www.dentoncad.com/property-search' },
     ],
   },
@@ -1098,7 +1098,7 @@ const GROUNDS = [
       'Texas Open Records Hotline: 512-478-6736 (if the CAD refuses)',
     ],
     links: [
-      { label: 'Texas AG Open Records portal', url: 'https://www.texasattorneygeneral.gov/open-government/governmental-bodies/open-records-requests' },
+      { label: 'Texas AG: your PIA rights', url: 'https://www.texasattorneygeneral.gov/open-government/members-public' },
     ],
   },
 ];
