@@ -128,6 +128,15 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
     subject.lng = geocode.lng;
   }
 
+  // Denton and Tarrant adapters return bare street strings (no ZIP). Carry the
+  // ZIP from the user's input or from the Census geocoder's matched address so
+  // that the Redfin ZIP trend card can look it up.
+  if (!/\b7\d{4}\b/.test(subject.address)) {
+    const zip = opts.address.match(/\b(7\d{4})\b/)?.[1]
+      ?? geocode?.address?.match(/\b(7\d{4})\b/)?.[1];
+    if (zip) subject.address = subject.address.trim() + ` ${zip}`;
+  }
+
   // Coordinates feed the flood-zone lookup. Denton supplies a parcel centroid;
   // for Collin (no geometry in the Socrata roll) try the Census geocoder as a
   // best-effort fallback, in parallel with the comp fetch so it costs no time.
