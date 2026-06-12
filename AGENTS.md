@@ -65,8 +65,9 @@ Address input → Census geocoder (county detection, often CORS-fails)
 - **Denton CAD** — `https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query`
   - Publishes `ownerNetAppraisedValue` (homestead-capped value). Updates in place (no ID change).
   - Max 500 records per page; adapter paginates automatically.
-- **FHFA HPI** — embedded in `src/adapters/hpi.ts`. Source CSV: `https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.csv`. CBSA 19124 (Dallas-Plano-Irving MSAD).
-- **RentCast AVM** — `https://api.rentcast.io/v1/avm/value`. User-supplied key, browser fetch. May be CORS-blocked (explicit error surfaced; falls back to manual comps).
+- **FHFA HPI** — embedded in `src/adapters/hpi.ts`. Source CSV: `https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.csv`. CBSA 19124 (Dallas-Plano-Irving MSAD). Refreshed by `.github/workflows/refresh-hpi.yml` (monthly cron + manual dispatch).
+- **Redfin ZIP median sale price** — embedded in `src/adapters/redfin-zips.ts` (auto-generated, ships empty). Source: `https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz`. Filtered to TX + supported ZIPs + single-family. Refreshed by `.github/workflows/refresh-redfin.yml` (monthly cron + manual dispatch). **To add ZIPs for a new county:** add to `ALLOWED_ZIPS` in `scripts/refresh-redfin.mjs` AND to `countyFromZip()` in `src/adapters/census.ts`.
+- **RentCast AVM + listings** — `https://api.rentcast.io/v1/avm/value` and `/v1/listings/sale`. User-supplied key, browser fetch. May be CORS-blocked (explicit error surfaced; falls back to manual comps). Never proxy through a public CORS relay.
 
 ## Conventions
 
@@ -90,5 +91,6 @@ Live site: <https://venkatesanps.github.io/property-protest/>
 - Add the new Collin certified roll's resource ID to the top of `COLLIN_SOURCES` in `src/adapters/collin.ts`.
 - `protestSeason()` in `src/constants.ts` drives the date-aware "What to do now" guidance
   (filing → hearing → planning); verify the phase boundaries still match the statute each year.
-- Update `HPI` table, `HPI_LATEST_KEY`, and `HPI_LATEST_INDEX` in `src/adapters/hpi.ts` each quarter (FHFA releases ~2 months after quarter end).
+- Update `HPI` table, `HPI_LATEST_KEY`, and `HPI_LATEST_INDEX` in `src/adapters/hpi.ts` each quarter (FHFA releases ~2 months after quarter end) — or let the `refresh-hpi` workflow handle it.
+- After adding a new county, add its ZIPs to `ALLOWED_ZIPS` in `scripts/refresh-redfin.mjs` and trigger the `Refresh Redfin ZIP sale data` workflow from the Actions tab.
 - Refresh `EXAMPLE_PROPERTIES` in `App.tsx` (the Real Examples landing section) if values shift significantly.

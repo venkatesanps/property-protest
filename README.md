@@ -109,10 +109,11 @@ generatePersonalPacket()                                               │
 | Denton County ArcGIS REST (`Parcels_FC/MapServer/0`) | Denton CAD full roll: same fields plus homestead-capped net value | None — CORS-enabled |
 | US Census geocoder | County detection from address | None — often CORS-blocked; app falls back to manual selection |
 | [FHFA House Price Index](https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.csv) | Dallas-Plano-Irving CBSA quarterly index, 2005 Q1–2026 Q1 — embedded in `src/adapters/hpi.ts` | None — public domain |
-| [RentCast AVM](https://www.rentcast.io) | Automated valuation + comparable sales | User-supplied key (50 free/month). May be CORS-blocked from browser. |
+| [RentCast AVM](https://www.rentcast.io) | Automated valuation + comparable sales + active MLS listing price | User-supplied key (50 free/month). May be CORS-blocked from browser. |
+| [Redfin Data Center](https://www.redfin.com/news/data-center/) | Monthly median sale price per ZIP code (single-family) for supported Collin/Denton/Tarrant ZIPs — embedded in `src/adapters/redfin-zips.ts` and refreshed monthly by GitHub Actions | None — free public data, attribution required |
 | Manual comps | User-entered sold prices from MLS or a realtor friend | N/A |
 
-**Why no Zillow/Redfin/HAR?** Texas is a sale-price non-disclosure state. Deed records show "$10 and other consideration." Public AVM sites block scraping. RentCast and manual entry are the only free-tier options.
+**Why no Zillow/Redfin/HAR scraping?** Texas is a sale-price non-disclosure state. Deed records show "$10 and other consideration." Public AVM sites block scraping. The app links users to Zillow/Redfin sold search pages (one click) and shows the Redfin ZIP median as context — but actual comp prices must be entered manually or via RentCast.
 
 ---
 
@@ -192,8 +193,8 @@ The app is a county router + per-county adapters. To add a new county:
 - **Census geocoder CORS:** automatic county detection usually fails from a browser. The app detects this and asks you to pick a county manually — no loss of function.
 - **RentCast CORS:** the market API may not send CORS headers. The app catches this, shows a clear amber message, and falls back to manual comps. The key is never routed through a proxy to avoid leaking it to a third party.
 - **Appraisal rolls are annual.** The Collin adapter probes a newest-first list of data.texas.gov resources (`COLLIN_SOURCES` in `src/adapters/collin.ts`) at runtime — currently the year-less *Preliminary* dataset, falling back to the 2025 certified roll — and shows the resolved roll vintage in the UI and PDFs. Add the new certified roll's resource ID to the top of that list each year. Denton's ArcGIS service updates in place.
-- **HPI data is embedded.** `src/adapters/hpi.ts` contains the FHFA index through 2026 Q1. Update `HPI` and `HPI_LATEST_KEY` / `HPI_LATEST_INDEX` each quarter.
-- **Only Collin and Denton are supported.** The Frisco area spans both counties; ZIP 75036 in particular has homes in both.
+- **HPI data is embedded.** `src/adapters/hpi.ts` contains the FHFA index through 2026 Q1. The `.github/workflows/refresh-hpi.yml` workflow keeps it current automatically.
+- **Redfin ZIP data is embedded.** `src/adapters/redfin-zips.ts` ships empty until the `.github/workflows/refresh-redfin.yml` workflow runs. Trigger it manually from the Actions tab after first deploy. To add ZIPs for a new county, add them to both `countyFromZip()` in `src/adapters/census.ts` and the `ALLOWED_ZIPS` set in `scripts/refresh-redfin.mjs`.
 
 ---
 

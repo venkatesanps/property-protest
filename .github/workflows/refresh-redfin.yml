@@ -1,0 +1,38 @@
+name: Refresh Redfin ZIP sale data
+
+# Redfin Data Center updates monthly.
+# Running on the 1st of each month; script is a no-op when data hasn't changed.
+on:
+  schedule:
+    - cron: '0 7 1 * *'    # 07:00 UTC on the 1st of every month
+  workflow_dispatch:         # allow manual trigger from the Actions tab
+
+permissions:
+  contents: write            # needed to push the updated redfin-zips.ts
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download and parse Redfin ZIP data
+        run: node scripts/refresh-redfin.mjs
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes — skipping commit."
+          else
+            git add src/adapters/redfin-zips.ts
+            git commit -m "chore: refresh Redfin ZIP median sale data ($(date +%Y-%m-%d))"
+            git push
+            echo "Pushed updated redfin-zips.ts — deploy workflow will rebuild the site."
+          fi

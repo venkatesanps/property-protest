@@ -13,6 +13,7 @@
 
 import { rgb } from 'pdf-lib';
 import type { AnalysisResult } from '../engine/run';
+import { getZipTrend } from '../adapters/redfinTrend';
 import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE, protestSeason } from '../constants';
 import { fmtUSD, fmtNum, fmtPsf } from '../format';
 import {
@@ -357,6 +358,24 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
         color: GRAY,
       });
     }
+  }
+
+  // ── Redfin ZIP median sale price ──
+  const zipMatch = result.subject.address.match(/\b(7\d{4})\b/);
+  const subjectZip = zipMatch ? zipMatch[1] : null;
+  const zipTrend = getZipTrend(subjectZip);
+  if (zipTrend && subjectZip) {
+    b.heading('Redfin ZIP Median Sale Price');
+    b.kv('ZIP', subjectZip);
+    b.kv('Median sale price', fmtUSD(zipTrend.medianSalePrice), NAVY);
+    b.kv('Month', zipTrend.latestMonth);
+    b.kv('12-month change', `${zipTrend.pctChange12mo >= 0 ? '+' : ''}${zipTrend.pctChange12mo.toFixed(1)}%`);
+    b.wrap(
+      'Source: Redfin Data Center (free public data, updated monthly). This is a ZIP-level ' +
+      'median for single-family homes — use as market context, not an indicated value for ' +
+      'this specific home.',
+      { size: 9, color: GRAY }
+    );
   }
 
   // ── Flood zone ──

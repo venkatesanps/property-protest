@@ -11,6 +11,7 @@ import {
 import { fmtUSD, fmtNum, fmtPsf } from './format';
 import { adjustToToday } from './adapters/hpi';
 import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
+import { getZipTrend } from './adapters/redfinTrend';
 
 const STEP_LABEL: Record<AppStep, string> = {
   input: '',
@@ -607,6 +608,9 @@ function Results({
           />
         </section>
       )}
+
+      {/* free sold comps helper */}
+      <FreeComps subject={subject} />
 
       {/* recent purchase (HPI-aged) */}
       {purchase && (
@@ -1356,6 +1360,78 @@ function VerdictPill({ code }: { code: string }) {
   );
 }
 
+function FreeComps({ subject }: { subject: import('./types').SubjectProperty }) {
+  const zip = subject.address.match(/\b(7\d{4})\b/)?.[1] ?? null;
+  const trend = getZipTrend(zip);
+
+  const zillowUrl = zip
+    ? `https://www.zillow.com/homes/recently_sold/${zip}_rb/`
+    : `https://www.zillow.com/homes/recently_sold/${encodeURIComponent(subject.address)}_rb/`;
+  const redfinUrl = zip
+    ? `https://www.redfin.com/zipcode/${zip}/filter/include=sold-6mo`
+    : `https://www.redfin.com/stingray/do/location-autocomplete?location=${encodeURIComponent(subject.address)}&v=2`;
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h3 className="font-semibold text-slate-900">Find free sold comps</h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Use these links to find recently sold homes near yours. Enter the prices below under
+        Advanced options → Recent comparable sales to strengthen your market-value argument.
+      </p>
+
+      {trend && zip && (
+        <div className="mt-3 rounded-lg bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+          <span className="font-medium">ZIP {zip} median sale price:</span>{' '}
+          {fmtUSD(trend.medianSalePrice)} ({trend.latestMonth}),{' '}
+          <span className={trend.pctChange12mo >= 0 ? 'text-emerald-700' : 'text-red-600'}>
+            {trend.pctChange12mo >= 0 ? '+' : ''}{trend.pctChange12mo.toFixed(1)}%
+          </span>{' '}
+          vs a year ago &middot;{' '}
+          <a
+            href="https://www.redfin.com/news/data-center/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            Redfin Data Center
+          </a>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap gap-3">
+        <a
+          href={zillowUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Zillow sold listings ↗
+        </a>
+        <a
+          href={redfinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Redfin sold listings ↗
+        </a>
+      </div>
+
+      <ol className="mt-4 space-y-1 text-xs text-slate-500 list-decimal list-inside">
+        <li>Open a link above and filter to homes sold in the last 12 months, ±20% of your {subject.livingAreaSqft > 0 ? `${subject.livingAreaSqft.toLocaleString()} sqft` : 'size'}.</li>
+        <li>Pick 3–5 comparable sales — note the address, sale price, sqft, and date.</li>
+        <li>Enter them under <strong className="text-slate-700">Advanced options → Recent comparable sales</strong> above and re-run.</li>
+      </ol>
+
+      <p className="mt-3 text-xs text-slate-400">
+        ~Half of TX sold listings hide the price (non-disclosure state). If a price is hidden:
+        any realtor will run a free CMA from NTREIS, or request the CAD&apos;s own comp grid
+        under Tex. Tax Code §41.461.
+      </p>
+    </section>
+  );
+}
+
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
@@ -1663,8 +1739,9 @@ function AdvancedPanel(props: {
           </button>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Actual sold prices on your street (a realtor friend can pull these from MLS). Texas
-          hides sale prices, so these are the strongest market evidence you can bring.
+          Actual sold prices on your street. Use the <strong>Find free sold comps</strong> links
+          in your results to open Zillow/Redfin sold searches — Texas hides ~half of sale prices,
+          so a realtor CMA or the CAD&apos;s §41.461 comp grid fills the gaps.
         </p>
         {props.manualComps.length > 0 && (
           <div className="mt-2 grid grid-cols-12 gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
