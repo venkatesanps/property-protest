@@ -11,6 +11,7 @@ import type {
   EquityResult,
   CapFloorResult,
   MarketValueResult,
+  ListingResult,
   Verdict,
   ManualComp,
   Comp,
@@ -37,7 +38,7 @@ import {
   fetchTarrantSubjectByAccount,
   fetchTarrantComps,
 } from '../adapters/tarrant';
-import { fetchRentcastMarket, buildManualMarket } from '../adapters/market';
+import { fetchRentcastMarket, fetchRentcastListing, buildManualMarket } from '../adapters/market';
 import { computeCapFloor } from './cap';
 import { computeEquity } from './equity';
 import { computeVerdict } from './verdict';
@@ -52,6 +53,8 @@ export interface AnalysisResult {
   purchase: PurchaseEvidence | null;
   /** Why RentCast was skipped, if a key was given but the call failed. */
   rentcastError: string | null;
+  /** Active MLS listing for this property, if currently for sale (RentCast). */
+  listing: ListingResult | null;
   /** FEMA flood zone for this property (null if lat/lng unavailable or API failed). */
   floodZone: FloodZoneResult | null;
   /** Owner-documented condition issues. */
@@ -149,13 +152,22 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
 
   let market: MarketValueResult | null = null;
   let rentcastError: string | null = null;
+  let listing: ListingResult | null = null;
   if (opts.rentcastKey) {
-    try {
-      market = await fetchRentcastMarket(address, opts.rentcastKey);
-    } catch (e) {
-      // CORS, bad key, or quota — record why, then fall back to manual comps.
-      rentcastError = e instanceof Error ? e.message : 'RentCast request failed.';
-      market = null;
+    // Fire AVM + listing lookup in parallel — each costs 1 API call.
+    const [marketResult, listingResult] = await Promise.allSettled([
+      fetchRentcastMarket(address, opts.rentcastKey),
+      fetchRentcastListing(address, opts.rentcastKey),
+    ]);
+    if (marketResult.status === 'fulfilled') {
+      market = marketResult.value;
+    } else {
+      rentcastError = marketResult.reason instanceof Error
+        ? marketResult.reason.message
+        : 'RentCast request failed.';
+    }
+    if (listingResult.status === 'fulfilled') {
+      listing = listingResult.value;
     }
   }
   if (!market && opts.manualComps && opts.manualComps.length > 0) {
@@ -196,6 +208,7 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
   onStep?.('results');
   return {
     geocode, subject, capFloor, equity, market, purchase, rentcastError,
+    listing,
     floodZone,
     condition: opts.condition ?? null,
     characteristics: opts.characteristics ?? null,

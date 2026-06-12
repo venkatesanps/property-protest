@@ -9,10 +9,11 @@
  * back to user-entered manual comps, which always work.
  */
 
-import type { MarketValueResult, ManualComp } from '../types';
+import type { MarketValueResult, ManualComp, ListingResult } from '../types';
 import { median } from '../engine/equity';
 
 const RENTCAST = 'https://api.rentcast.io/v1/avm/value';
+const RENTCAST_LISTINGS = 'https://api.rentcast.io/v1/listings/sale';
 
 interface RentcastComp {
   formattedAddress?: string;
@@ -80,6 +81,59 @@ export async function fetchRentcastMarket(
     lowRange: d.priceRangeLow != null ? Number(d.priceRangeLow) : undefined,
     highRange: d.priceRangeHigh != null ? Number(d.priceRangeHigh) : undefined,
     comparables: comps,
+  };
+}
+
+interface RentcastListing {
+  formattedAddress?: string;
+  price?: number;
+  listPrice?: number;
+  status?: string;
+  listedDate?: string;
+  daysOnMarket?: number;
+  mlsName?: string;
+  mlsNumber?: string;
+}
+
+/**
+ * Fetch the active for-sale MLS listing for an address via RentCast.
+ * Returns null if the property is not currently listed or the call fails.
+ * Uses the same user-supplied key as fetchRentcastMarket — no proxy, no key exposure.
+ */
+export async function fetchRentcastListing(
+  address: string,
+  apiKey: string
+): Promise<ListingResult | null> {
+  const url = new URL(RENTCAST_LISTINGS);
+  url.searchParams.set('address', address);
+  url.searchParams.set('status', 'Active');
+  url.searchParams.set('limit', '1');
+
+  let resp: Response;
+  try {
+    resp = await fetch(url.toString(), {
+      headers: { 'X-Api-Key': apiKey, Accept: 'application/json' },
+    });
+  } catch {
+    return null;
+  }
+  if (!resp.ok) return null;
+
+  const data = (await resp.json()) as RentcastListing[] | RentcastListing;
+  const item: RentcastListing | undefined = Array.isArray(data) ? data[0] : data;
+  if (!item) return null;
+
+  const price = Number(item.listPrice ?? item.price) || 0;
+  if (price === 0) return null;
+
+  return {
+    listPrice: price,
+    status: item.status ?? 'Active',
+    listedDate: item.listedDate ?? null,
+    daysOnMarket: item.daysOnMarket != null ? Number(item.daysOnMarket) : null,
+    mlsName: item.mlsName ?? null,
+    mlsNumber: item.mlsNumber ?? null,
+    formattedAddress: item.formattedAddress ?? address,
   };
 }
 

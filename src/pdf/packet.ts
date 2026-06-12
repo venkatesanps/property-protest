@@ -53,6 +53,7 @@ function derive(result: AnalysisResult) {
   }
   if (market && market.estimatedValue > 0) indicated.push(market.estimatedValue);
   if (purchase && purchase.marketValue > 0) indicated.push(purchase.marketValue);
+  if (result.listing && result.listing.listPrice > 0) indicated.push(result.listing.listPrice);
   const requested =
     verdict.targetValue ?? (indicated.length ? Math.min(...indicated) : null);
 
@@ -99,6 +100,11 @@ function derive(result: AnalysisResult) {
         `Splitting land from building: neighborhood comps indicate about ${fmtUSD(equity.indicatedLandValue)} in land and ${fmtUSD(equity.indicatedImprovementValue)} in building (${fmtPsf(equity.improvementMedianPsf ?? 0)}/sqft), for an indicated total of about ${fmtUSD(equity.indicatedValueSplit)}.`
       );
     }
+  }
+  if (result.listing && result.listing.listPrice > 0) {
+    points.push(
+      `This property is currently listed for sale at ${fmtUSD(result.listing.listPrice)}${result.listing.mlsName ? ` (${result.listing.mlsName}${result.listing.mlsNumber ? ` MLS# ${result.listing.mlsNumber}` : ''})` : ''} — an active list price below the CAD appraised value is the strongest market-value exhibit you can bring.`
+    );
   }
   if (market && market.source !== 'purchase' && market.estimatedValue > 0) {
     points.push(
@@ -271,6 +277,28 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
     b.text('Comparable properties (refined set, sorted by $/sqft):', { font: b.bold });
     const comps = equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps;
     drawTable(b, ['Address', 'SqFt', 'Year', 'Apprsd', '$/sqft'], compRows(comps), COMP_XS);
+  }
+
+  // ── Active MLS listing ──
+  if (result.listing && result.listing.listPrice > 0) {
+    b.heading('Active MLS Listing');
+    b.kv('List price', fmtUSD(result.listing.listPrice), NAVY);
+    b.kv('Status', result.listing.status);
+    if (result.listing.daysOnMarket != null) b.kv('Days on market', String(result.listing.daysOnMarket));
+    if (result.listing.listedDate) b.kv('Listed', result.listing.listedDate.slice(0, 10));
+    if (result.listing.mlsName) {
+      b.kv('MLS', `${result.listing.mlsName}${result.listing.mlsNumber ? ` · #${result.listing.mlsNumber}` : ''}`);
+    }
+    if (result.listing.listPrice < result.subject.appraisedValue) {
+      b.gap(4);
+      b.wrap(
+        `The active list price (${fmtUSD(result.listing.listPrice)}) is ` +
+        `${fmtUSD(result.subject.appraisedValue - result.listing.listPrice)} below the CAD appraised value ` +
+        `(${fmtUSD(result.subject.appraisedValue)}). An arms-length list price is compelling market-value evidence ` +
+        `under Tex. Tax Code §41.43(a). Print the MLS listing sheet and attach it as Exhibit A.`,
+        { color: NAVY }
+      );
+    }
   }
 
   // ── Market evidence ──

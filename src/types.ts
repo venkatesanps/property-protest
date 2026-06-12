@@ -101,6 +101,18 @@ export interface MarketValueResult {
   comparables?: MarketComp[];
 }
 
+/** Active MLS listing data from RentCast /listings/sale — present only when the
+ *  property is currently listed for sale. */
+export interface ListingResult {
+  listPrice: number;
+  status: string;
+  listedDate: string | null;
+  daysOnMarket: number | null;
+  mlsName: string | null;
+  mlsNumber: string | null;
+  formattedAddress: string;
+}
+
 /** Homeowner-supplied extras that strengthen a protest. */
 export interface ProtestExtras {
   /** Total of contractor repair/deferred-maintenance estimates (condition adj.). */

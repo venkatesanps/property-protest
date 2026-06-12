@@ -449,7 +449,7 @@ function Results({
   result: AnalysisResult;
   onDownload: (kind: 'board' | 'personal') => void;
 }) {
-  const { subject, capFloor, equity, market, purchase, rentcastError, floodZone, condition, characteristics, verdict } = result;
+  const { subject, capFloor, equity, market, purchase, rentcastError, listing, floodZone, condition, characteristics, verdict } = result;
   const season = protestSeason();
   // Warn from April on, when the current year's notices exist but the dataset
   // may still be serving last year's certified values.
@@ -658,6 +658,36 @@ function Results({
               />
             )}
           </div>
+        </section>
+      )}
+
+      {/* active MLS listing */}
+      {listing && (
+        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+          <h3 className="font-semibold text-slate-900">Active MLS listing</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            This property is currently listed for sale
+            {listing.mlsName ? ` on ${listing.mlsName}` : ''}
+            {listing.mlsNumber ? ` · MLS# ${listing.mlsNumber}` : ''}.
+            A list price below the CAD appraisal is strong market-value evidence.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3">
+            <Stat label="List price" value={fmtUSD(listing.listPrice)} accent />
+            {listing.daysOnMarket != null && (
+              <Stat label="Days on market" value={String(listing.daysOnMarket)} />
+            )}
+            {listing.listedDate && (
+              <Stat label="Listed" value={listing.listedDate.slice(0, 10)} />
+            )}
+          </div>
+          {listing.listPrice < subject.appraisedValue && (
+            <Note tone="warn">
+              List price ({fmtUSD(listing.listPrice)}) is{' '}
+              {fmtUSD(subject.appraisedValue - listing.listPrice)} below your CAD appraised
+              value ({fmtUSD(subject.appraisedValue)}). Include this as Exhibit A in your
+              protest packet.
+            </Note>
+          )}
         </section>
       )}
 
