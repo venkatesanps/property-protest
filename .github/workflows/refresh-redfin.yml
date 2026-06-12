@@ -15,14 +15,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
 
       - name: Download and parse Redfin ZIP data
-        run: node scripts/refresh-redfin.mjs
+        run: |
+          S3="https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz"
+          echo "Downloading $S3 …"
+          curl -fsSL "$S3" | gunzip | node scripts/refresh-redfin.mjs
 
       - name: Commit if changed
         run: |

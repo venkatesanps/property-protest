@@ -1,27 +1,26 @@
 #!/usr/bin/env node
 /**
- * Downloads the Redfin Data Center ZIP-code market tracker and regenerates
- * the REDFIN_ZIPS block in src/adapters/redfin-zips.ts.
+ * Reads the Redfin Data Center ZIP-code market tracker TSV from stdin and
+ * regenerates the REDFIN_ZIPS block in src/adapters/redfin-zips.ts.
  *
- * Run manually:  node scripts/refresh-redfin.mjs
- * Also run by:   .github/workflows/refresh-redfin.yml  (scheduled monthly)
+ * Invoked by the workflow as:
+ *   curl -fsSL <S3_URL> | gunzip | node scripts/refresh-redfin.mjs
+ *
+ * The workflow handles download + decompression so this script only does
+ * line-by-line parsing — safe for any file size with minimal memory use.
+ *
+ * Run manually (requires curl + gunzip):
+ *   curl -fsSL "https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz" | gunzip | node scripts/refresh-redfin.mjs
  *
  * Source: https://www.redfin.com/news/data-center/
- * File:   zip_code_market_tracker.tsv000.gz  (~1.5 GB compressed, ~8 GB uncompressed)
  * License: free for non-commercial use with attribution.
- *
- * Streams line-by-line via readline — never buffers the full file in memory.
  */
 
-import { createGunzip } from 'node:zlib';
-import { Readable } from 'node:stream';
 import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const S3_URL =
-  'https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz';
 const ROOT     = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_FILE = path.join(ROOT, 'src/adapters/redfin-zips.ts');
 const MONTHS_BACK = 36;
@@ -42,24 +41,10 @@ const ALLOWED_ZIPS = new Set([
   '76179','76180','76182','76244','76248',
 ]);
 
-/**
- * Stream the gzipped TSV line-by-line, collecting only the rows we care about.
- * Never buffers the full file — safe for files of any size.
- */
-async function streamAndParse() {
-  console.log(`Fetching ${S3_URL} …`);
-  const res = await fetch(S3_URL);
-  if (!res.ok) throw new Error(`Redfin download failed: HTTP ${res.status} — check S3 URL is still valid`);
+async function parseStdin() {
+  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
-  // Node fetch returns a WHATWG ReadableStream; convert to Node.js Readable
-  // so we can pipe it through the native zlib gunzip transform.
-  const nodeReadable = Readable.fromWeb(res.body);
-  const gunzip = createGunzip();
-  nodeReadable.pipe(gunzip);
-
-  const rl = createInterface({ input: gunzip, crlfDelay: Infinity });
-
-  const byZip = new Map(); // zip -> Array<{month, medianSalePrice, homesSold}>
+  const byZip = new Map();
   let header = null;
   let iZip = -1, iState = -1, iType = -1, iPeriod = -1, iPrice = -1, iSold = -1;
   let lineCount = 0;
@@ -69,12 +54,17 @@ async function streamAndParse() {
     lineCount++;
 
     if (!header) {
-      // First line is the header
       header = line.split('\t').map(h => h.trim());
+
+      // Print first 15 columns so we can debug column-name mismatches.
+      console.error('Header (first 15 cols):', header.slice(0, 15).join(' | '));
 
       const col = (name) => {
         const i = header.indexOf(name);
-        if (i === -1) throw new Error(`Column "${name}" not found. First 10 cols: ${header.slice(0, 10).join(', ')}`);
+        if (i === -1) {
+          console.error(`Available columns: ${header.join(', ')}`);
+          throw new Error(`Column "${name}" not found in TSV header.`);
+        }
         return i;
       };
 
@@ -85,11 +75,11 @@ async function streamAndParse() {
       iPrice  = col('median_sale_price');
       iSold   = col('homes_sold');
 
-      console.log(`Header parsed. Streaming data rows…`);
+      console.error('Columns found. Streaming data rows…');
       continue;
     }
 
-    // Fast pre-filter before splitting the whole line
+    // Fast pre-filter before splitting the whole line (speeds up by 10×).
     if (!line.includes('TX')) continue;
     if (!line.includes('Single Family Residential')) continue;
 
@@ -99,6 +89,7 @@ async function streamAndParse() {
     if (cols[iState]?.trim() !== 'TX') continue;
     if (cols[iType]?.trim() !== 'Single Family Residential') continue;
 
+    // Region may be "Zip Code: 75034" or plain "75034"
     const rawRegion = cols[iZip]?.trim() ?? '';
     const zip = rawRegion.replace(/^Zip Code:\s*/i, '').replace(/\D/g, '').slice(0, 5);
     if (!ALLOWED_ZIPS.has(zip)) continue;
@@ -117,7 +108,7 @@ async function streamAndParse() {
     matchCount++;
   }
 
-  console.log(`Streamed ${lineCount.toLocaleString()} lines, ${matchCount} matched rows, ${byZip.size} ZIPs.`);
+  console.error(`Streamed ${lineCount.toLocaleString()} lines → ${matchCount} matched rows → ${byZip.size} ZIPs.`);
   return byZip;
 }
 
@@ -179,15 +170,18 @@ function updateFile(block) {
 }
 
 async function main() {
-  const byZip  = await streamAndParse();
+  const byZip   = await parseStdin();
   const entries = buildEntries(byZip);
-  const zips   = Object.keys(entries);
+  const zips    = Object.keys(entries);
 
   if (zips.length === 0) {
-    throw new Error('No ZIP entries built — check column names and ALLOWED_ZIPS list.');
+    throw new Error(
+      'No ZIP entries built. Check that the column names above match and that ' +
+      'ALLOWED_ZIPS contains valid ZIPs present in the dataset.'
+    );
   }
 
-  console.log(`Built ${zips.length} ZIP entries: ${zips.slice(0, 6).join(', ')}${zips.length > 6 ? ' …' : ''}`);
+  console.error(`Built ${zips.length} ZIP entries: ${zips.slice(0, 6).join(', ')}${zips.length > 6 ? ' …' : ''}`);
 
   const block   = renderBlock(entries);
   const changed = updateFile(block);
@@ -200,6 +194,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('refresh-redfin failed:', err.message);
+  console.error('refresh-redfin FAILED:', err.message);
   process.exit(1);
 });
