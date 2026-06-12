@@ -54,7 +54,7 @@ async function parseStdin() {
     lineCount++;
 
     if (!header) {
-      header = line.split('\t').map(h => h.trim());
+      header = line.split('\t').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
 
       // Print first 15 columns so we can debug column-name mismatches.
       console.error('Header (first 15 cols):', header.slice(0, 15).join(' | '));
@@ -86,22 +86,22 @@ async function parseStdin() {
     const cols = line.split('\t');
     if (cols.length <= Math.max(iZip, iState, iType, iPeriod, iPrice, iSold)) continue;
 
-    if (cols[iState]?.trim() !== 'TX') continue;
-    if (cols[iType]?.trim() !== 'Single Family Residential') continue;
+    const cell = (i) => cols[i]?.trim().replace(/^"|"$/g, '') ?? '';
+
+    if (cell(iState) !== 'TX') continue;
+    if (cell(iType) !== 'Single Family Residential') continue;
 
     // Region may be "Zip Code: 75034" or plain "75034"
-    const rawRegion = cols[iZip]?.trim() ?? '';
-    const zip = rawRegion.replace(/^Zip Code:\s*/i, '').replace(/\D/g, '').slice(0, 5);
+    const zip = cell(iZip).replace(/^Zip Code:\s*/i, '').replace(/\D/g, '').slice(0, 5);
     if (!ALLOWED_ZIPS.has(zip)) continue;
 
-    const price = parseFloat(cols[iPrice]);
+    const price = parseFloat(cell(iPrice));
     if (!isFinite(price) || price <= 0) continue;
 
-    const periodRaw = cols[iPeriod]?.trim() ?? '';
-    const month = periodRaw.slice(0, 7); // "YYYY-MM"
+    const month = cell(iPeriod).slice(0, 7); // "YYYY-MM"
     if (!/^\d{4}-\d{2}$/.test(month)) continue;
 
-    const sold = parseInt(cols[iSold], 10);
+    const sold = parseInt(cell(iSold), 10);
 
     if (!byZip.has(zip)) byZip.set(zip, []);
     byZip.get(zip).push({ month, medianSalePrice: price, homesSold: isFinite(sold) ? sold : 0 });
