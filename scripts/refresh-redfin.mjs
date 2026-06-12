@@ -7,24 +7,26 @@
  * Also run by:   .github/workflows/refresh-redfin.yml  (scheduled monthly)
  *
  * Source: https://www.redfin.com/news/data-center/
- * File:   zip_code_market_tracker.tsv000.gz
+ * File:   zip_code_market_tracker.tsv000.gz  (~1.5 GB compressed, ~8 GB uncompressed)
  * License: free for non-commercial use with attribution.
+ *
+ * Streams line-by-line via readline — never buffers the full file in memory.
  */
 
 import { createGunzip } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { createInterface } from 'node:readline';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
-import { Writable } from 'node:stream';
 
 const S3_URL =
   'https://redfin-public-data.s3.us-west-2.amazonaws.com/redfin_market_tracker/zip_code_market_tracker.tsv000.gz';
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT     = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_FILE = path.join(ROOT, 'src/adapters/redfin-zips.ts');
 const MONTHS_BACK = 36;
 
-// All supported ZIPs (from src/adapters/census.ts countyFromZip).
+// All supported ZIPs (mirrors src/adapters/census.ts countyFromZip).
 const ALLOWED_ZIPS = new Set([
   // Collin
   '75033','75034','75035','75071','75072','75070',
@@ -40,64 +42,82 @@ const ALLOWED_ZIPS = new Set([
   '76179','76180','76182','76244','76248',
 ]);
 
-async function fetchAndParse() {
+/**
+ * Stream the gzipped TSV line-by-line, collecting only the rows we care about.
+ * Never buffers the full file — safe for files of any size.
+ */
+async function streamAndParse() {
   console.log(`Fetching ${S3_URL} …`);
   const res = await fetch(S3_URL);
-  if (!res.ok) throw new Error(`Redfin download failed: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Redfin download failed: HTTP ${res.status} — check S3 URL is still valid`);
 
-  // Accumulate decompressed text via streaming gunzip.
-  const chunks = [];
-  const collector = new Writable({
-    write(chunk, _enc, cb) { chunks.push(chunk); cb(); },
-  });
-  await pipeline(res.body, createGunzip(), collector);
-  return Buffer.concat(chunks).toString('utf8');
-}
+  // Node fetch returns a WHATWG ReadableStream; convert to Node.js Readable
+  // so we can pipe it through the native zlib gunzip transform.
+  const nodeReadable = Readable.fromWeb(res.body);
+  const gunzip = createGunzip();
+  nodeReadable.pipe(gunzip);
 
-function parseTsv(tsv) {
-  const lines = tsv.split('\n');
-  const header = lines[0].split('\t').map(h => h.trim());
+  const rl = createInterface({ input: gunzip, crlfDelay: Infinity });
 
-  const idx = (name) => {
-    const i = header.indexOf(name);
-    if (i === -1) throw new Error(`TSV column "${name}" not found. Header: ${header.slice(0, 10).join(', ')}`);
-    return i;
-  };
+  const byZip = new Map(); // zip -> Array<{month, medianSalePrice, homesSold}>
+  let header = null;
+  let iZip = -1, iState = -1, iType = -1, iPeriod = -1, iPrice = -1, iSold = -1;
+  let lineCount = 0;
+  let matchCount = 0;
 
-  const iZip    = idx('region');           // "Zip Code: 75034" or just "75034"
-  const iState  = idx('state_code');
-  const iType   = idx('property_type');
-  const iPeriod = idx('period_end');       // "2026-04-30" — we extract YYYY-MM
-  const iPrice  = idx('median_sale_price');
-  const iSold   = idx('homes_sold');
+  for await (const line of rl) {
+    lineCount++;
 
-  // zip -> Array<{ month: "2026-04", medianSalePrice, homesSold }>
-  const byZip = new Map();
+    if (!header) {
+      // First line is the header
+      header = line.split('\t').map(h => h.trim());
 
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i].split('\t');
-    if (row.length < header.length) continue;
+      const col = (name) => {
+        const i = header.indexOf(name);
+        if (i === -1) throw new Error(`Column "${name}" not found. First 10 cols: ${header.slice(0, 10).join(', ')}`);
+        return i;
+      };
 
-    if (row[iState]?.trim() !== 'TX') continue;
-    if (row[iType]?.trim() !== 'Single Family Residential') continue;
+      iZip    = col('region');
+      iState  = col('state_code');
+      iType   = col('property_type');
+      iPeriod = col('period_end');
+      iPrice  = col('median_sale_price');
+      iSold   = col('homes_sold');
 
-    // Region field might be "Zip Code: 75034" or plain "75034"
-    const rawRegion = row[iZip]?.trim() ?? '';
+      console.log(`Header parsed. Streaming data rows…`);
+      continue;
+    }
+
+    // Fast pre-filter before splitting the whole line
+    if (!line.includes('TX')) continue;
+    if (!line.includes('Single Family Residential')) continue;
+
+    const cols = line.split('\t');
+    if (cols.length <= Math.max(iZip, iState, iType, iPeriod, iPrice, iSold)) continue;
+
+    if (cols[iState]?.trim() !== 'TX') continue;
+    if (cols[iType]?.trim() !== 'Single Family Residential') continue;
+
+    const rawRegion = cols[iZip]?.trim() ?? '';
     const zip = rawRegion.replace(/^Zip Code:\s*/i, '').replace(/\D/g, '').slice(0, 5);
     if (!ALLOWED_ZIPS.has(zip)) continue;
 
-    const price = parseFloat(row[iPrice]);
-    const sold  = parseInt(row[iSold], 10);
+    const price = parseFloat(cols[iPrice]);
     if (!isFinite(price) || price <= 0) continue;
 
-    const periodRaw = row[iPeriod]?.trim() ?? '';
+    const periodRaw = cols[iPeriod]?.trim() ?? '';
     const month = periodRaw.slice(0, 7); // "YYYY-MM"
     if (!/^\d{4}-\d{2}$/.test(month)) continue;
 
+    const sold = parseInt(cols[iSold], 10);
+
     if (!byZip.has(zip)) byZip.set(zip, []);
     byZip.get(zip).push({ month, medianSalePrice: price, homesSold: isFinite(sold) ? sold : 0 });
+    matchCount++;
   }
 
+  console.log(`Streamed ${lineCount.toLocaleString()} lines, ${matchCount} matched rows, ${byZip.size} ZIPs.`);
   return byZip;
 }
 
@@ -105,14 +125,12 @@ function buildEntries(byZip) {
   const result = {};
 
   for (const [zip, rows] of byZip) {
-    // Sort chronologically, keep last MONTHS_BACK entries.
     rows.sort((a, b) => a.month.localeCompare(b.month));
     const recent = rows.slice(-MONTHS_BACK);
     if (recent.length === 0) continue;
 
     const latest = recent[recent.length - 1];
 
-    // 12-month change: find entry closest to 12 months before latest.
     const targetMonth = subtractMonths(latest.month, 12);
     const prior = recent.find(r => r.month === targetMonth)
       ?? recent.find(r => r.month <= targetMonth && r.month >= subtractMonths(latest.month, 14));
@@ -161,12 +179,15 @@ function updateFile(block) {
 }
 
 async function main() {
-  const tsv    = await fetchAndParse();
-  const byZip  = parseTsv(tsv);
+  const byZip  = await streamAndParse();
   const entries = buildEntries(byZip);
   const zips   = Object.keys(entries);
 
-  console.log(`Parsed ${zips.length} ZIPs: ${zips.slice(0, 5).join(', ')}${zips.length > 5 ? ' …' : ''}`);
+  if (zips.length === 0) {
+    throw new Error('No ZIP entries built — check column names and ALLOWED_ZIPS list.');
+  }
+
+  console.log(`Built ${zips.length} ZIP entries: ${zips.slice(0, 6).join(', ')}${zips.length > 6 ? ' …' : ''}`);
 
   const block   = renderBlock(entries);
   const changed = updateFile(block);
