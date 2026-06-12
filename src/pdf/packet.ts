@@ -34,7 +34,9 @@ const EMERALD_BG = rgb(0.9, 0.96, 0.93);
 const AMBER_BG = rgb(0.99, 0.96, 0.86);
 
 function countyLabel(county: string): string {
-  return county === 'collin' ? 'Collin County (CCAD)' : 'Denton County (DCAD)';
+  if (county === 'collin') return 'Collin County (CCAD)';
+  if (county === 'tarrant') return 'Tarrant County (TAD)';
+  return 'Denton County (DCAD)';
 }
 
 /** Numbers + arguments derived once, shared by both packets. */

@@ -24,6 +24,7 @@ const CENSUS_BASE =
 const COUNTY_FIPS_MAP: Record<string, County> = {
   '48085': 'collin',
   '48121': 'denton',
+  '48439': 'tarrant',
 };
 
 export async function geocodeAddress(address: string): Promise<GeocodeResult> {
@@ -98,7 +99,18 @@ export class CensusCorsBridgeError extends Error {
 export function countyFromZip(zip: string): County {
   const collinZips = ['75033', '75034', '75035', '75071', '75072', '75070'];
   const dentonZips = ['75036', '76226', '76227', '76247'];
+  // Representative Tarrant County ZIPs (Fort Worth, Arlington, NRH, Keller, etc.)
+  const tarrantZips = [
+    '76001','76002','76006','76010','76011','76012','76013','76014','76015','76016',
+    '76017','76018','76019','76020',
+    '76021','76022','76034','76036','76039','76040','76051','76052','76053','76054',
+    '76063','76071','76092','76102','76103','76104','76105','76106','76107','76108',
+    '76109','76110','76111','76112','76114','76115','76116','76117','76118','76119',
+    '76120','76123','76126','76127','76131','76132','76133','76134','76135','76137',
+    '76140','76148','76155','76161','76164','76177','76179','76180','76182','76244','76248',
+  ];
   if (collinZips.includes(zip)) return 'collin';
   if (dentonZips.includes(zip)) return 'denton';
+  if (tarrantZips.includes(zip)) return 'tarrant';
   return 'unsupported';
 }

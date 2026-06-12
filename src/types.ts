@@ -1,6 +1,6 @@
 // ─── Core domain types ────────────────────────────────────────────────────────
 
-export type County = 'collin' | 'denton' | 'unsupported';
+export type County = 'collin' | 'denton' | 'tarrant' | 'unsupported';
 
 /** Normalized property record from either county adapter. */
 export interface SubjectProperty {

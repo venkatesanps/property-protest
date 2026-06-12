@@ -32,6 +32,11 @@ import {
   fetchDentonSubjectByAccount,
   fetchDentonComps,
 } from '../adapters/denton';
+import {
+  fetchTarrantSubject,
+  fetchTarrantSubjectByAccount,
+  fetchTarrantComps,
+} from '../adapters/tarrant';
 import { fetchRentcastMarket, buildManualMarket } from '../adapters/market';
 import { computeCapFloor } from './cap';
 import { computeEquity } from './equity';
@@ -82,12 +87,16 @@ async function fetchSubject(
   if (county === 'denton') {
     return account ? fetchDentonSubjectByAccount(account) : fetchDentonSubject(address);
   }
-  throw new Error('This county is not yet supported (Collin and Denton only).');
+  if (county === 'tarrant') {
+    return account ? fetchTarrantSubjectByAccount(account) : fetchTarrantSubject(address);
+  }
+  throw new Error('This county is not yet supported (Collin, Denton, and Tarrant only).');
 }
 
 async function fetchComps(subject: SubjectProperty): Promise<Comp[]> {
   if (subject.county === 'collin') return fetchCollinComps(subject.neighborhoodCode, subject.account);
   if (subject.county === 'denton') return fetchDentonComps(subject.neighborhoodCode, subject.account);
+  if (subject.county === 'tarrant') return fetchTarrantComps(subject.neighborhoodCode, subject.account);
   return [];
 }
 
@@ -104,7 +113,7 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
     county = geocode.county;
     if (county === 'unsupported') {
       throw new Error(
-        `Address is in county FIPS ${geocode.countyFips}, which is not yet supported (Collin & Denton only).`
+        `Address is in county FIPS ${geocode.countyFips}, which is not yet supported (Collin, Denton, and Tarrant only).`
       );
     }
   }

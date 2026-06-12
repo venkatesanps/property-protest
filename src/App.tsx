@@ -26,6 +26,7 @@ const RENTCAST_KEY_STORAGE = 'protest.rentcastKey';
 const COUNTY_BADGE: Record<string, string> = {
   collin: 'bg-sky-100 text-sky-700',
   denton: 'bg-violet-100 text-violet-700',
+  tarrant: 'bg-amber-100 text-amber-700',
   unsupported: 'bg-slate-100 text-slate-600',
 };
 
@@ -75,7 +76,7 @@ function App() {
         const matches = await suggestAddresses(address);
         if (matches.length === 0) {
           setError(
-            'No matching property found in Collin or Denton County. Check the address (this tool covers the Frisco / Collin / Denton area only).'
+            'No matching property found in Collin, Denton, or Tarrant County. Check the address and try again.'
           );
           setStep('input');
           return;
@@ -157,7 +158,7 @@ function App() {
             </span>
           </div>
           <span className="hidden text-sm text-slate-400 sm:block">
-            Collin &amp; Denton County property tax protests
+            Collin, Denton &amp; Tarrant County property tax protests
           </span>
         </div>
       </header>
@@ -556,6 +557,14 @@ function Results({
               your hearing.
             </Note>
           )}
+        {subject.county === 'tarrant' && (
+          <Note tone="info">
+            Tarrant CAD publishes market values only. The homestead cap (10%/yr) and net
+            appraised value are not available here — check your notice or{' '}
+            <a href="https://tarrant.prodigycad.com/property-search" target="_blank" rel="noreferrer"
+               className="underline">tarrant.prodigycad.com</a> for your exact taxable value.
+          </Note>
+        )}
       </section>
 
       {/* equity */}
@@ -865,7 +874,7 @@ function HowItWorks() {
         <HowCard
           step="1"
           title="We pull your official record"
-          body="Your appraisal data comes directly from the county appraisal district — Collin CAD (via Texas Open Data) or Denton CAD (via their ArcGIS service). Living area, year built, quality class, land value, improvement value — the same numbers on your appraisal notice."
+          body="Your appraisal data comes directly from the county appraisal district — Collin CAD (Texas Open Data), Denton CAD (ArcGIS), or Tarrant CAD (TAD's own ArcGIS service). Living area, year built, quality class, land value, improvement value — the same numbers on your appraisal notice."
         />
         <HowCard
           step="2"

@@ -13,6 +13,9 @@
 import type { County } from '../types';
 import { collinBaseUrl } from './collin';
 
+const TARRANT_BASE =
+  'https://tad.newedgeservices.com/arcgis/rest/services/Hosted/TADMap/FeatureServer/0/query';
+
 export interface AddressSuggestion {
   /** Pretty, title-cased label for the dropdown. */
   label: string;
@@ -98,10 +101,38 @@ async function suggestDenton(prefix: string, signal?: AbortSignal): Promise<Addr
     }));
 }
 
+async function suggestTarrant(prefix: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
+  const url = new URL(TARRANT_BASE);
+  url.searchParams.set(
+    'where',
+    `situsaddress LIKE '${esc(prefix)}%' AND (applclasscd LIKE 'A1%' OR applclasscd LIKE 'B%')`
+  );
+  url.searchParams.set('outFields', 'pin,situsaddress');
+  url.searchParams.set('orderByFields', 'situsaddress');
+  url.searchParams.set('returnGeometry', 'false');
+  url.searchParams.set('resultRecordCount', '8');
+  url.searchParams.set('f', 'json');
+
+  const resp = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal });
+  if (!resp.ok) return [];
+  const data = (await resp.json()) as {
+    features?: { attributes: { pin?: string; situsaddress?: string } }[];
+  };
+  return (data.features ?? [])
+    .map((f) => f.attributes)
+    .filter((a) => a.pin && a.situsaddress)
+    .map((a) => ({
+      label: prettyAddress((a.situsaddress as string).trim()),
+      raw: (a.situsaddress as string).trim(),
+      county: 'tarrant' as const,
+      account: (a.pin as string).trim(),
+    }));
+}
+
 /**
- * Return up to ~10 address suggestions across both counties for the typed text.
- * Queries are issued in parallel and failures from either source are ignored so
- * one slow/blocked endpoint never kills the dropdown.
+ * Return up to ~12 address suggestions across all three supported counties.
+ * Queries are issued in parallel and failures from any source are silently
+ * dropped so one slow endpoint never kills the dropdown.
  */
 export async function suggestAddresses(
   query: string,
@@ -111,17 +142,19 @@ export async function suggestAddresses(
   // Need at least a building number + a couple letters to make a useful prefix.
   if (prefix.length < 4 || !/^\d/.test(prefix)) return [];
 
-  const [collin, denton] = await Promise.all([
+  const [collin, denton, tarrant] = await Promise.all([
     suggestCollin(prefix, signal).catch(() => []),
     suggestDenton(prefix, signal).catch(() => []),
+    suggestTarrant(prefix, signal).catch(() => []),
   ]);
 
-  // Interleave so both counties are represented, then cap.
+  // Interleave so all counties are represented, then cap.
   const merged: AddressSuggestion[] = [];
-  const max = Math.max(collin.length, denton.length);
+  const max = Math.max(collin.length, denton.length, tarrant.length);
   for (let i = 0; i < max; i++) {
     if (collin[i]) merged.push(collin[i]);
     if (denton[i]) merged.push(denton[i]);
+    if (tarrant[i]) merged.push(tarrant[i]);
   }
-  return merged.slice(0, 10);
+  return merged.slice(0, 12);
 }
