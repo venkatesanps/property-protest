@@ -164,89 +164,104 @@ function extractPropertyData(fullText: string): {
   let match = fullText.match(/(?:Property\s+ID|PID)[:\s]+(\d+)/i);
   if (match) data.propertyId = match[1];
 
-  // Extract address (usually first substantial address in the document)
-  match = fullText.match(
-    /(?:Subject|Property|Situs)[:\s]+([0-9]+\s+[A-Z][\w\s]+(?:St|Rd|Ave|Ln|Dr|Ct|Way|Blvd))/i
-  );
+  // Extract address (usually "SITUS : address" or "Subject: address")
+  match = fullText.match(/SITUS\s*:\s*([0-9]+\s+[A-Z][\w\s]+(?:St|Rd|Ave|Ln|Dr|Ct|Way|Blvd))/i);
+  if (!match) {
+    match = fullText.match(
+      /(?:Subject|Property)[:\s]+([0-9]+\s+[A-Z][\w\s]+(?:St|Rd|Ave|Ln|Dr|Ct|Way|Blvd))/i
+    );
+  }
   if (match) data.subjectAddress = match[1].trim();
 
-  // Extract current appraised value
-  match = fullText.match(
-    /(?:Current|Total|Appraised)\s+(?:Appraised|Value)[:\s]*\$?([\d,]+)/i
-  );
-  if (match) data.currentAppraised = parseInt(match[1].replace(/,/g, ''), 10);
+  // Extract current appraised value (often appears with living area like "0.1452  $836,185")
+  // Look for patterns: large dollar amounts, often after property characteristics
+  const dollarPattern = /\$\s*([\d,]+)/g;
+  const dollarMatches = Array.from(fullText.matchAll(dollarPattern));
 
-  // Extract net appraised (homestead-capped) if present
-  match = fullText.match(/(?:Net\s+)?Appraised[:\s]*\$?([\d,]+)/i);
-  if (match) {
-    const netVal = parseInt(match[1].replace(/,/g, ''), 10);
-    if (netVal < data.currentAppraised) data.currentNetAppraised = netVal;
+  if (dollarMatches.length > 0) {
+    // The subject property's appraised value is often one of the larger values
+    // Usually around 4-6 values in and typically > $200k for residential
+    const dollarValues = dollarMatches.map((m) => parseInt(m[1].replace(/,/g, ''), 10));
+    const residential = dollarValues.filter((v) => v > 100000 && v < 5000000);
+    if (residential.length > 0) {
+      // The highest value close to median is likely the appraised value
+      const sorted = [...residential].sort((a, b) => a - b);
+      data.currentAppraised = sorted[Math.floor(sorted.length / 2)];
+    }
+  }
+
+  // Extract net appraised: usually 8-10% lower than current appraised (homestead cap)
+  const halfValue = Math.floor(data.currentAppraised * 0.9);
+  if (fullText.match(new RegExp(`\\$\\s*${halfValue.toLocaleString('en-US').replace(/,/g, '[,\\s]*')}`))) {
+    data.currentNetAppraised = halfValue;
   }
 
   return data;
 }
 
-function extractComps(
-  tables: ParsedTable[],
-  method: 'equity' | 'market'
-): CADComp[] {
+function extractComps(fullText: string, method: 'equity' | 'market'): CADComp[] {
   const comps: CADComp[] = [];
 
-  for (const table of tables) {
-    // Look for tables with address/value columns
-    const addressCol = findColumn(table.headers, ['Address', 'Property', 'Situs']);
-    const valueCol =
-      method === 'equity'
-        ? findColumn(table.headers, ['Appraised', 'Value', 'Assessment'])
-        : findColumn(table.headers, ['Sale', 'Price', 'Value']);
+  // Split by "Comp 1", "Comp 2", etc. for structured data
+  const sectionPattern =
+    method === 'equity'
+      ? /SUBJECT\s+EQUITY\s+ANALYSIS([\s\S]*?)(?=COMPARABLE|$)/i
+      : /COMPARABLE\s+SALES\s+ANALYSIS([\s\S]*?)(?=SUBJECT|$)/i;
 
-    if (addressCol === -1 || valueCol === -1) continue;
+  const sectionMatch = fullText.match(sectionPattern);
+  if (!sectionMatch) return comps;
 
-    for (const row of table.rows) {
-      const address = Object.values(row)[addressCol]?.trim();
-      const valueStr = Object.values(row)[valueCol]?.replace(/[$,]/g, '');
-      const value = valueStr ? parseInt(valueStr, 10) : undefined;
+  const section = sectionMatch[1];
 
-      if (address && value) {
-        const comp: CADComp = { address, appraisedValue: value };
+  // Look for address patterns: "XXX STREET_NAME CITY STATE"
+  const addressPattern = /(\d+\s+[A-Z][\w\s]+(?:ST|RD|AVE|LN|DR|CT|WAY|BLVD|CIRCLE))\s+([A-Z]+)\s+(TX|OK)/gi;
+  const addresses = Array.from(section.matchAll(addressPattern));
 
-        // Try to extract sqft, year built, class
-        const sqftCol = findColumn(table.headers, ['Sqft', 'Area', 'Living']);
-        const yearCol = findColumn(table.headers, ['Year', 'Built']);
-        const classCol = findColumn(table.headers, ['Class', 'Grade']);
+  for (const addressMatch of addresses) {
+    const address = `${addressMatch[1]} ${addressMatch[2]} ${addressMatch[3]}`;
 
-        if (sqftCol !== -1) {
-          const sqftStr = Object.values(row)[sqftCol]?.replace(/,/g, '');
-          comp.livingAreaSqft = sqftStr ? parseInt(sqftStr, 10) : undefined;
-        }
-        if (yearCol !== -1) {
-          const yearStr = Object.values(row)[yearCol];
-          comp.yearBuilt = yearStr ? parseInt(yearStr, 10) : undefined;
-        }
-        if (classCol !== -1) {
-          comp.qualityClass = Object.values(row)[classCol]?.trim();
-        }
+    // Find dollar amounts near this address
+    const contextStart = Math.max(0, section.indexOf(addressMatch[0]) - 200);
+    const contextEnd = Math.min(section.length, section.indexOf(addressMatch[0]) + 300);
+    const context = section.substring(contextStart, contextEnd);
 
-        comps.push(comp);
-      }
+    const comp: CADComp = { address: address.trim() };
+
+    // Extract appraised/equity value
+    const apprPattern = /\$\s*([\d,]+)/g;
+    const apprMatches = Array.from(context.matchAll(apprPattern)).map((m) =>
+      parseInt(m[1].replace(/,/g, ''), 10)
+    );
+
+    if (method === 'equity' && apprMatches.length > 0) {
+      // For equity, take the first large value near the address
+      comp.appraisedValue = apprMatches[0];
+    } else if (method === 'market' && apprMatches.length > 0) {
+      // For market/sales, take the last (usually sale price)
+      comp.salePrice = apprMatches[apprMatches.length - 1];
     }
 
-    // Found comps, no need to check other tables
-    if (comps.length > 0) break;
+    // Extract sqft (usually 3-4 digit number)
+    const sqftMatch = context.match(/(\d{3,4}(?:\.\d+)?)\s+(?:living|sqft|area)/i) ||
+      context.match(/(\d{3,4})\s+[A-Z]/);
+    if (sqftMatch) comp.livingAreaSqft = parseInt(sqftMatch[1], 10);
+
+    // Extract year built (YYYY or YY/YY format)
+    const yearMatch = context.match(/(\d{4})\s*\/\s*(\d{4})|(\d{4})\s+/);
+    if (yearMatch) comp.yearBuilt = parseInt(yearMatch[1] || yearMatch[3], 10);
+
+    // Extract class (usually 3-4 letter code)
+    const classMatch = context.match(/(VB\d|RA|RB|RC|UD)\s/);
+    if (classMatch) comp.qualityClass = classMatch[1];
+
+    if (comp.appraisedValue || comp.salePrice) {
+      comps.push(comp);
+    }
   }
 
   return comps;
 }
 
-function findColumn(headers: string[], keywords: string[]): number {
-  for (let i = 0; i < headers.length; i++) {
-    const h = headers[i].toUpperCase();
-    if (keywords.some((k) => h.includes(k.toUpperCase()))) {
-      return i;
-    }
-  }
-  return -1;
-}
 
 function extractIndicatedValues(fullText: string): {
   equityIndicatedValue: number | null;
@@ -258,18 +273,32 @@ function extractIndicatedValues(fullText: string): {
   let valuationMethod: 'cost-approach' | 'market-sales' | 'equity' | 'hybrid' | 'unknown' =
     'unknown';
 
-  // Look for "Indicated Value" or similar
-  let match = fullText.match(/Equity\s+(?:Indicated|Value)[:\s]*\$?([\d,]+)/i);
-  if (match) equityIndicatedValue = parseInt(match[1].replace(/,/g, ''), 10);
-
-  match = fullText.match(/Market\s+(?:Indicated|Value)[:\s]*\$?([\d,]+)/i);
+  // Look for "COMPARABLE SALES ANALYSIS" section with median
+  let match = fullText.match(/COMPARABLE\s+SALES\s+ANALYSIS.*?Median\s*\$?([\d,]+)/is);
   if (match) marketIndicatedValue = parseInt(match[1].replace(/,/g, ''), 10);
 
-  // Detect methodology
-  if (fullText.match(/Equity\s+(?:Approach|Analysis)/i)) valuationMethod = 'equity';
-  else if (fullText.match(/Market\s+(?:Approach|Sales)/i)) valuationMethod = 'market-sales';
-  else if (fullText.match(/Cost\s+(?:Approach|Analysis)/i)) valuationMethod = 'cost-approach';
-  else if (fullText.match(/(?:Multiple|Hybrid|Combined)\s+Approaches?/i)) valuationMethod = 'hybrid';
+  // Look for "EQUITY ANALYSIS" section with median
+  match = fullText.match(/EQUITY\s+(?:ANALYSIS|COMPARABLES).*?Median\s*\$?([\d,]+)/is);
+  if (match) equityIndicatedValue = parseInt(match[1].replace(/,/g, ''), 10);
+
+  // Alternative: look for explicit "Indicated Value" patterns
+  if (!equityIndicatedValue) {
+    match = fullText.match(/Equity.*?Indicated.*?\$?([\d,]+)/is);
+    if (match) equityIndicatedValue = parseInt(match[1].replace(/,/g, ''), 10);
+  }
+
+  if (!marketIndicatedValue) {
+    match = fullText.match(/Market.*?Indicated.*?\$?([\d,]+)/is);
+    if (match) marketIndicatedValue = parseInt(match[1].replace(/,/g, ''), 10);
+  }
+
+  // Detect methodology - check for section headings
+  if (fullText.match(/SUBJECT\s+EQUITY\s+ANALYSIS/i)) valuationMethod = 'equity';
+  else if (fullText.match(/COMPARABLE\s+SALES\s+ANALYSIS/i)) valuationMethod = 'market-sales';
+  else if (fullText.match(/COST\s+(?:APPROACH|ANALYSIS)/i)) valuationMethod = 'cost-approach';
+
+  // If both present, it's hybrid
+  if (equityIndicatedValue && marketIndicatedValue) valuationMethod = 'hybrid';
 
   return { equityIndicatedValue, marketIndicatedValue, valuationMethod };
 }
@@ -277,7 +306,7 @@ function extractIndicatedValues(fullText: string): {
 // ─── Public API ────────────────────────────────────────────────────────────────
 
 export async function parseCADEvidencePDF(file: File): Promise<ExtractedCADEvidence> {
-  const { fullText, tables } = await extractPdfText(file);
+  const { fullText } = await extractPdfText(file);
 
   const county = detectCounty(fullText);
   if (county === 'unsupported') {
@@ -287,8 +316,8 @@ export async function parseCADEvidencePDF(file: File): Promise<ExtractedCADEvide
   }
 
   const propertyData = extractPropertyData(fullText);
-  const equityComps = extractComps(tables, 'equity');
-  const marketComps = extractComps(tables, 'market');
+  const equityComps = extractComps(fullText, 'equity');
+  const marketComps = extractComps(fullText, 'market');
   const { equityIndicatedValue, marketIndicatedValue, valuationMethod } =
     extractIndicatedValues(fullText);
 
