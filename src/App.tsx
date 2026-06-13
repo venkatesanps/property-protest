@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { County, ManualComp, AppStep, PropertyCondition, PropertyCharacteristics } from './types';
+import type { County, ManualComp, AppStep, PropertyCondition, PropertyCharacteristics, ExtractedCADEvidence, CADAnalysis } from './types';
 import { runAnalysis } from './engine/run';
 import type { AnalysisResult } from './engine/run';
 import { suggestAddresses, type AddressSuggestion } from './adapters/suggest';
@@ -12,6 +12,8 @@ import { fmtUSD, fmtNum, fmtPsf } from './format';
 import { adjustToToday } from './adapters/hpi';
 import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
 import { getZipTrend } from './adapters/redfinTrend';
+import { CADEvidenceUpload } from './components/CADEvidenceUpload';
+import { analyzeCADEvidence } from './engine/counter-strategy';
 
 const STEP_LABEL: Record<AppStep, string> = {
   input: '',
@@ -38,6 +40,8 @@ function App() {
   const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [cadEvidence, setCADEvidence] = useState<ExtractedCADEvidence | null>(null);
+  const [cadAnalysis, setCADAnalysis] = useState<CADAnalysis | null>(null);
 
   // optional evidence inputs
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -261,7 +265,17 @@ function App() {
               </svg>
               Search another property
             </button>
-            <Results result={result} onDownload={handleDownload} />
+            <Results
+              result={result}
+              onDownload={handleDownload}
+              cadEvidence={cadEvidence}
+              cadAnalysis={cadAnalysis}
+              onCADEvidenceLoaded={(evidence) => {
+                setCADEvidence(evidence);
+                const analysis = analyzeCADEvidence(evidence, result.equity);
+                setCADAnalysis(analysis);
+              }}
+            />
           </>
         )}
         {!result && !busy && (
@@ -446,9 +460,15 @@ function AddressAutocomplete({
 function Results({
   result,
   onDownload,
+  cadEvidence,
+  cadAnalysis,
+  onCADEvidenceLoaded,
 }: {
   result: AnalysisResult;
   onDownload: (kind: 'board' | 'personal') => void;
+  cadEvidence: ExtractedCADEvidence | null;
+  cadAnalysis: CADAnalysis | null;
+  onCADEvidenceLoaded: (evidence: ExtractedCADEvidence) => void;
 }) {
   const { subject, capFloor, equity, market, purchase, rentcastError, listing, floodZone, condition, characteristics, verdict } = result;
   const season = protestSeason();
@@ -606,6 +626,63 @@ function Results({
             comps={equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps}
             subjectPsf={equity.subjectPsf}
           />
+        </section>
+      )}
+
+      {/* CAD evidence upload & analysis */}
+      {!cadEvidence && (
+        <CADEvidenceUpload
+          onEvidenceLoaded={onCADEvidenceLoaded}
+        />
+      )}
+
+      {cadAnalysis && (
+        <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+          <h3 className="font-semibold text-slate-900">Counter-Strategy Analysis</h3>
+          <div className="mt-4 space-y-4 text-sm">
+            <div>
+              <p className="font-medium text-slate-700">Primary Argument</p>
+              <p className="mt-1 text-slate-600">{cadAnalysis.recommendedStrategy.primaryArgument}</p>
+            </div>
+            {cadAnalysis.weaknesses.length > 0 && (
+              <div>
+                <p className="font-medium text-slate-700">Weaknesses Found</p>
+                <ul className="mt-1 space-y-1">
+                  {cadAnalysis.weaknesses.map((w, i) => (
+                    <li key={i} className="flex gap-2 text-slate-600">
+                      <span className={`font-medium ${w.severity === 'major' ? 'text-red-600' : w.severity === 'moderate' ? 'text-amber-600' : 'text-slate-500'}`}>
+                        •
+                      </span>
+                      <span>
+                        <strong>{w.type.replace(/-/g, ' ')}:</strong> {w.description}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div>
+              <p className="font-medium text-slate-700">Settlement Targets</p>
+              <div className="mt-2 grid grid-cols-3 gap-3">
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-xs text-slate-500">Ask</p>
+                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.ask.toLocaleString()}</p>
+                </div>
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-xs text-slate-500">Target</p>
+                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.target.toLocaleString()}</p>
+                </div>
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-xs text-slate-500">Floor</p>
+                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.floor.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-slate-700">County Notes</p>
+              <p className="mt-1 text-xs text-slate-600">{cadAnalysis.recommendedStrategy.countySpecificNotes}</p>
+            </div>
+          </div>
         </section>
       )}
 

@@ -234,6 +234,105 @@ export type AppStep =
   | 'results'
   | 'error';
 
+// ─── CAD Evidence Data ───────────────────────────────────────────────────────
+
+/** A comparable property extracted from CAD evidence PDF. */
+export interface CADComp {
+  address: string;
+  appraisedValue?: number;      // equity comps
+  salePrice?: number;            // market/sales comps
+  saleDate?: string;             // market comps
+  livingAreaSqft?: number;
+  yearBuilt?: number;
+  qualityClass?: string;
+  adjustments?: Record<string, number>; // adjustment name → amount
+}
+
+/** CAD evidence extracted from uploaded PDF. */
+export interface ExtractedCADEvidence {
+  county: County;
+  propertyId: string;
+  subjectAddress: string;
+  currentAppraised: number;
+  currentNetAppraised: number | null;
+  homesteadCap: number | null;
+
+  // Market value approach (sales comps)
+  marketComps: CADComp[];
+  marketMedianValue?: number;
+  marketIndicatedValue?: number;
+
+  // Equity approach (appraisal comps)
+  equityComps: CADComp[];
+  equityMedianValue?: number;
+  equityIndicatedValue?: number;
+
+  // What DCAD concluded
+  valuationMethod: 'cost-approach' | 'market-sales' | 'equity' | 'hybrid' | 'unknown';
+  adjustmentDetails: Record<string, string>; // description of each adjustment
+
+  // Metadata
+  extractedAt: string;      // ISO timestamp
+  confidence: number;       // 0-1, how confident we are in the extraction
+  extractionNotes: string[]; // warnings/issues during parse
+}
+
+/** Inconsistency or weakness found in CAD's analysis. */
+export interface CADWeakness {
+  type:
+    | 'indicated-vs-appraised'     // indicated value conflicts with appraised
+    | 'comp-selection-bias'        // comps are cherry-picked or suboptimal
+    | 'same-street-omission'       // ignored better same-street comps
+    | 'methodology-inconsistency'  // switched methods without justification
+    | 'adjustment-asymmetry'       // all adjustments favor one direction
+    | 'outdated-sales'             // market comps are too old
+    | 'different-class'            // comps are materially different class
+    | 'outlier-adjustment';        // single large adjustment drives value
+  severity: 'minor' | 'moderate' | 'major';
+  description: string;
+  dollarImpact: number;            // estimated $ benefit to homeowner
+  counterEvidence: string;         // what evidence rebuts this
+}
+
+/** Analysis of CAD evidence compared to user's property data. */
+export interface CADAnalysis {
+  evidenceUsed: ExtractedCADEvidence;
+
+  inconsistencies: {
+    type: 'indicated-vs-appraised' | 'market-vs-equity' | 'methodology-shift';
+    severity: 'minor' | 'moderate' | 'major';
+    description: string;
+    dollarImpact: number;
+  }[];
+
+  weaknesses: CADWeakness[];
+
+  strengths: {
+    description: string;
+    howToAddress: string;
+  }[];
+
+  recommendedStrategy: {
+    primaryArgument: string;
+    secondaryArguments: string[];
+    weaknessesToAvoid: string[];
+
+    settlementTargets: {
+      ask: number;           // 90% of user's indicated
+      target: number;        // realistic target (95%)
+      floor: number;         // won't accept less (98%)
+    };
+
+    countySpecificNotes: string;
+    likelyObjections: {
+      objection: string;
+      yourResponse: string;
+    }[];
+  };
+
+  analysisCreatedAt: string; // ISO timestamp
+}
+
 export interface AppState {
   step: AppStep;
   rawAddress: string;
@@ -245,5 +344,7 @@ export interface AppState {
   market: MarketValueResult | null;
   manualComps: ManualComp[];
   rentcastKey: string;
+  cadEvidence: ExtractedCADEvidence | null;  // uploaded evidence PDF data
+  cadAnalysis: CADAnalysis | null;            // analysis of the evidence
   error: string | null;
 }
