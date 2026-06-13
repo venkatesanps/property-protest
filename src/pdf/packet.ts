@@ -45,7 +45,11 @@ function derive(result: AnalysisResult) {
   const { subject, capFloor, equity, market, purchase, verdict } = result;
   const floor = capFloor.floor ?? subject.appraisedValue;
 
-  // The value to request: verdict target, else the lowest indicated value we have.
+  // The value to request: only meaningful when the verdict actually found a winning case.
+  // Do NOT fall back to the minimum indicated value — if that value is above the cap
+  // floor it would instruct the homeowner to ask for MORE than their current taxable
+  // value, which is wrong. The verdict engine already ran the same candidates and
+  // concluded there is no winning case, so honour that conclusion here.
   const indicated: number[] = [];
   if (equity) {
     indicated.push(equity.indicatedValueRefined, equity.indicatedValueSizeAdjusted);
@@ -55,8 +59,7 @@ function derive(result: AnalysisResult) {
   if (market && market.estimatedValue > 0) indicated.push(market.estimatedValue);
   if (purchase && purchase.marketValue > 0) indicated.push(purchase.marketValue);
   if (result.listing && result.listing.listPrice > 0) indicated.push(result.listing.listPrice);
-  const requested =
-    verdict.targetValue ?? (indicated.length ? Math.min(...indicated) : null);
+  const requested = verdict.targetValue ?? null;
 
   // Open the conversation a touch below the ask so there is room to settle.
   const opening = requested != null ? Math.round((requested * 0.96) / 1000) * 1000 : null;
@@ -484,15 +487,27 @@ export async function generatePersonalPacket(result: AnalysisResult): Promise<Ui
       EMERALD_BG
     );
   } else {
-    b.callout(
-      [
-        { text: 'HEADS UP', size: 10, bold: true, color: SLATE },
-        { text: result.verdict.headline, size: 12, bold: true, color: NAVY },
-        { text: 'The data does not clearly support a reduction this year - read the summary before filing.', size: 10 },
-      ],
-      AMBER_BG,
-      rgb(0.85, 0.6, 0.1)
-    );
+    // Build context-specific guidance for the "no winning case from full comp set" scenario.
+    const noWinLines = [
+      { text: 'HEADS UP', size: 10, bold: true, color: SLATE },
+      { text: result.verdict.headline, size: 12, bold: true, color: NAVY },
+    ] as Parameters<typeof b.callout>[0];
+    if (result.verdict.code === 'dont_protest' && result.capFloor.isCapped) {
+      noWinLines.push({
+        text:
+          'The automated analysis uses all homes in your CAD neighborhood. If you know of 2-3 ' +
+          'homes on your street with a lower appraised $/sqft, bring those specific comps to your ' +
+          'informal meeting - targeted street-level evidence can still produce a settlement even ' +
+          'when the full-neighborhood median does not beat your cap floor.',
+        size: 10,
+      });
+    } else {
+      noWinLines.push({
+        text: 'The data does not clearly support a reduction this year. Read the summary and talking points below before deciding whether to file.',
+        size: 10,
+      });
+    }
+    b.callout(noWinLines, AMBER_BG, rgb(0.85, 0.6, 0.1));
   }
 
   // ── How it works ──
