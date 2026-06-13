@@ -33,14 +33,28 @@ export function computeVerdict(
   // ── Build candidate values, lowest (best for the homeowner) wins. ──
   const candidates: Candidate[] = [];
   if (equity) {
-    // Use the most-defensible equity number available: prefer refined comps,
-    // then take the lowest of the refinement methods.
+    // Use the most-defensible equity number available. Prioritize same-street comps
+    // when available (most directly comparable); else prefer refined comps.
+    // Then take the lowest of the refinement methods.
     const equityOptions: Candidate[] = [];
+
+    // Same-street comps are the strongest argument (same street, same quality class, most comparable).
+    // Include them if available and they beat the floor.
+    if (equity.indicatedValueSameStreet != null && equity.sameStreetComps.length >= 3) {
+      equityOptions.push({
+        method: `equity - same street (${equity.sameStreetComps.length} comps)`,
+        value: equity.indicatedValueSameStreet,
+      });
+    }
+
+    // Refined comps (size/age matched within the full neighborhood).
     const refinedOk = equity.refinedComps.length >= 3;
     equityOptions.push({
       method: refinedOk ? 'equity - refined comps' : 'equity - neighborhood median',
       value: refinedOk ? equity.indicatedValueRefined : equity.indicatedValueAll,
     });
+
+    // Other refinement methods.
     if (equity.indicatedValueClassMatched != null) {
       equityOptions.push({ method: 'equity - same quality class', value: equity.indicatedValueClassMatched });
     }

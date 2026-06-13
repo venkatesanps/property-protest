@@ -80,6 +80,13 @@ export interface EquityResult {
   indicatedLandValue: number | null;
   /** indicatedImprovementValue + indicatedLandValue — total via the split method. */
   indicatedValueSplit: number | null;
+  // ── same-street comps (most directly comparable when available) ──
+  /** Comps on the same street as the subject (parsed from address). */
+  sameStreetComps: Comp[];
+  /** Median $/sqft of same-street comps, if 3+ available. */
+  sameStreetMedianPsf: number | null;
+  /** sameStreetMedianPsf × subject sqft — indicated value from same-street comps only. */
+  indicatedValueSameStreet: number | null;
 }
 
 /** Result of the homestead-cap floor check. */

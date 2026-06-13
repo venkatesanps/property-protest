@@ -81,24 +81,40 @@ function derive(result: AnalysisResult) {
     }
   }
   if (equity) {
-    points.push(
-      `Your appraisal works out to ${fmtPsf(equity.subjectPsf)}/sqft versus a neighborhood median of ${fmtPsf(equity.neighborhoodMedianPsf)}/sqft - you are appraised higher than ${equity.percentileHigher.toFixed(0)}% of comparable homes (rank #${equity.subjectRankOf} of ${equity.neighborhoodCount}).`
-    );
-    points.push(
-      `The median of comparable appraisals indicates a value of about ${fmtUSD(equity.indicatedValueRefined)} for a home like yours (refined, size/age-matched comps).`
-    );
-    if (equity.indicatedValueClassMatched != null) {
+    // Prioritize same-street comps in talking points when available and strong.
+    if (equity.indicatedValueSameStreet != null && equity.sameStreetComps.length >= 3) {
+      const sameSt = equity.sameStreetComps;
+      const minPsf = Math.min(...sameSt.map((c) => c.pricePerSqft));
+      const maxPsf = Math.max(...sameSt.map((c) => c.pricePerSqft));
+      points.push(
+        `On your own street, comparable homes are appraised at ${fmtPsf(equity.sameStreetMedianPsf ?? 0)}/sqft (range: ${fmtPsf(minPsf)}–${fmtPsf(maxPsf)}). Applying that median to your ${subject.livingAreaSqft} sqft gives an indicated value of ${fmtUSD(equity.indicatedValueSameStreet)}. Same street = most directly comparable under §41.43(b)(3).`
+      );
+    } else {
+      // Fall back to neighborhood-wide analysis.
+      points.push(
+        `Your appraisal works out to ${fmtPsf(equity.subjectPsf)}/sqft versus a neighborhood median of ${fmtPsf(equity.neighborhoodMedianPsf)}/sqft - you are appraised higher than ${equity.percentileHigher.toFixed(0)}% of comparable homes (rank #${equity.subjectRankOf} of ${equity.neighborhoodCount}).`
+      );
+      points.push(
+        `The median of comparable appraisals indicates a value of about ${fmtUSD(equity.indicatedValueRefined)} for a home like yours (refined, size/age-matched comps).`
+      );
+    }
+
+    // Only include refinement methods if they add to the argument (not in conflict).
+    if (equity.indicatedValueClassMatched != null && equity.indicatedValueClassMatched < floor) {
       points.push(
         `Limiting comps to your exact quality class (${subject.qualityClass}) indicates about ${fmtUSD(equity.indicatedValueClassMatched)} - an apples-to-apples comparison.`
       );
     }
-    points.push(
-      `After a size adjustment (larger homes carry lower $/sqft), comparable values indicate about ${fmtUSD(equity.indicatedValueSizeAdjusted)}.`
-    );
+    if (equity.indicatedValueSizeAdjusted < floor) {
+      points.push(
+        `After a size adjustment (larger homes carry lower $/sqft), comparable values indicate about ${fmtUSD(equity.indicatedValueSizeAdjusted)}.`
+      );
+    }
     if (
       equity.indicatedValueSplit != null &&
       equity.indicatedImprovementValue != null &&
-      equity.indicatedLandValue != null
+      equity.indicatedLandValue != null &&
+      equity.indicatedValueSplit < floor
     ) {
       points.push(
         `Splitting land from building: neighborhood comps indicate about ${fmtUSD(equity.indicatedLandValue)} in land and ${fmtUSD(equity.indicatedImprovementValue)} in building (${fmtPsf(equity.improvementMedianPsf ?? 0)}/sqft), for an indicated total of about ${fmtUSD(equity.indicatedValueSplit)}.`

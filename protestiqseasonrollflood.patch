@@ -1,0 +1,781 @@
+From cd385565d1161330c2fff031418aa7816a6766c3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 11 Jun 2026 14:46:31 +0000
+Subject: [PATCH] Season-aware guidance, 2026 Collin roll failover, flood-zone
+ fix, exemption check
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Data correctness (the big one for June use):
+- Collin adapter now probes data.texas.gov resources newest-first
+  (COLLIN_SOURCES: 'nne4-8riu' Preliminary -> 'vffy-snc6' 2025 certified)
+  with its full field set, uses the first that answers, and caches the
+  result for a day. The 2026 preliminary values are picked up the moment
+  they are compatible, with automatic fallback if the schema drifts.
+  Autocomplete shares the resolved resource so suggestions and lookups
+  can never come from different roll years.
+- Roll vintage (rollYear/rollLabel) now travels on SubjectProperty and is
+  shown in the results card and both PDF headers; an amber warning appears
+  from April onward when the data is from a prior tax year.
+
+Season-aware guidance:
+- protestSeason() (filing / hearing / planning) in constants.ts.
+- 'How to file' is now 'What to do now': after May 15 it covers Sec. 41.461
+  evidence requests, informal review, ARB hearing flow, late protest for
+  good cause (41.44(b)), and Sec. 25.25(c)/(d) correction motions.
+- The board packet's FILE step adapts the same way.
+
+Flood zone on the happy path:
+- Denton subject queries request the parcel centroid (outSR=4326), and
+  run.ts falls back to a best-effort Census geocode (parallel with the
+  comp fetch) for Collin — the FEMA lookup previously never ran when an
+  autocomplete suggestion was picked, which is the main path.
+
+Homestead exemption check (Denton):
+- The already-fetched exemptions field is now surfaced: when no HS code is
+  present and the cap isn't active, the results card suggests verifying /
+  filing the exemption (free, retroactive up to two years).
+
+Smaller wins:
+- OpenGraph/Twitter meta tags for chat link previews.
+- Safari/iOS-safe PDF download (delayed object-URL revoke).
+- deploy.yml passes optional SOCRATA_APP_TOKEN secret to the build.
+
+https://claude.ai/code/session_01Gj2Jw5rgxonEwcscd9ZChn
+---
+ .github/workflows/deploy.yml |   4 +
+ AGENTS.md                    |  12 ++-
+ README.md                    |   2 +-
+ index.html                   |  14 ++++
+ scripts/gen-sample.ts        |   3 +
+ src/App.tsx                  | 112 ++++++++++++++++++++++----
+ src/adapters/collin.ts       | 151 ++++++++++++++++++++++++++++++-----
+ src/adapters/denton.ts       |  45 ++++++++---
+ src/adapters/suggest.ts      |   7 +-
+ src/constants.ts             |  19 +++++
+ src/engine/run.ts            |  16 ++++
+ src/pdf/packet.ts            |  18 ++++-
+ src/types.ts                 |   6 ++
+ 13 files changed, 352 insertions(+), 57 deletions(-)
+
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index 1ad5c84..28de93e 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -26,6 +26,10 @@ jobs:
+           cache: npm
+       - run: npm ci
+       - run: npm run build
++        env:
++          # Optional free Socrata app token — raises the data.texas.gov rate limit
++          # for autocomplete/lookups. No-op when the secret is not set.
++          VITE_SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+       - uses: actions/configure-pages@v5
+       - uses: actions/upload-pages-artifact@v3
+         with:
+diff --git a/AGENTS.md b/AGENTS.md
+index 42d8e3f..a65c47e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -56,9 +56,12 @@ Address input → Census geocoder (county detection, often CORS-fails)
+ 
+ ## Data sources
+ 
+-- **Collin CAD** — `https://data.texas.gov/resource/vffy-snc6.json` (Socrata SODA)
++- **Collin CAD** — data.texas.gov Socrata SODA. The adapter probes `COLLIN_SOURCES`
++  (newest-first: `nne4-8riu` "Preliminary", then `vffy-snc6` "2025 certified") at runtime
++  and uses the first resource that answers its full subject field set; the resolved
++  vintage is exposed as `SubjectProperty.rollYear` / `rollLabel` and shown in UI + PDFs.
+   - Does **not** publish the homestead-capped value. Cap check infers from prior-year value + 10%.
+-  - Resource ID changes annually when the new roll is published. Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts`.
++  - When a new certified roll is published, add its resource ID to the top of `COLLIN_SOURCES`.
+ - **Denton CAD** — `https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query`
+   - Publishes `ownerNetAppraisedValue` (homestead-capped value). Updates in place (no ID change).
+   - Max 500 records per page; adapter paginates automatically.
+@@ -84,7 +87,8 @@ Live site: <https://venkatesanps.github.io/property-protest/>
+ 
+ ## Annual maintenance checklist
+ 
+-- Update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts` when new Collin roll publishes.
+-- Update `PROTEST_DEADLINE` in `src/constants.ts` (typically May 15 each year).
++- Add the new Collin certified roll's resource ID to the top of `COLLIN_SOURCES` in `src/adapters/collin.ts`.
++- `protestSeason()` in `src/constants.ts` drives the date-aware "What to do now" guidance
++  (filing → hearing → planning); verify the phase boundaries still match the statute each year.
+ - Update `HPI` table, `HPI_LATEST_KEY`, and `HPI_LATEST_INDEX` in `src/adapters/hpi.ts` each quarter (FHFA releases ~2 months after quarter end).
+ - Refresh `EXAMPLE_PROPERTIES` in `App.tsx` (the Real Examples landing section) if values shift significantly.
+diff --git a/README.md b/README.md
+index 3d7958a..8397f82 100644
+--- a/README.md
++++ b/README.md
+@@ -191,7 +191,7 @@ The app is a county router + per-county adapters. To add a new county:
+ 
+ - **Census geocoder CORS:** automatic county detection usually fails from a browser. The app detects this and asks you to pick a county manually — no loss of function.
+ - **RentCast CORS:** the market API may not send CORS headers. The app catches this, shows a clear amber message, and falls back to manual comps. The key is never routed through a proxy to avoid leaking it to a third party.
+-- **Appraisal rolls are annual.** When Collin publishes a new year's roll, update `COLLIN_RESOURCE_ID` in `src/adapters/collin.ts`. Denton's ArcGIS service updates in place.
++- **Appraisal rolls are annual.** The Collin adapter probes a newest-first list of data.texas.gov resources (`COLLIN_SOURCES` in `src/adapters/collin.ts`) at runtime — currently the year-less *Preliminary* dataset, falling back to the 2025 certified roll — and shows the resolved roll vintage in the UI and PDFs. Add the new certified roll's resource ID to the top of that list each year. Denton's ArcGIS service updates in place.
+ - **HPI data is embedded.** `src/adapters/hpi.ts` contains the FHFA index through 2026 Q1. Update `HPI` and `HPI_LATEST_KEY` / `HPI_LATEST_INDEX` each quarter.
+ - **Only Collin and Denton are supported.** The Frisco area spans both counties; ZIP 75036 in particular has homes in both.
+ 
+diff --git a/index.html b/index.html
+index 65bf00d..594a14e 100644
+--- a/index.html
++++ b/index.html
+@@ -8,6 +8,20 @@
+       name="description"
+       content="ProtestIQ — instantly check whether your Collin or Denton County (Frisco-area) property tax appraisal is worth protesting, and generate ready-to-file evidence packets."
+     />
++    <!-- Link previews when shared in chats / social -->
++    <meta property="og:type" content="website" />
++    <meta property="og:title" content="ProtestIQ — Texas Property Tax Protest Analyzer" />
++    <meta
++      property="og:description"
++      content="Free, instant check of your Collin or Denton County appraisal: equity analysis from public CAD data, a verdict, and ready-to-file ARB evidence packets. No signup."
++    />
++    <meta property="og:url" content="https://venkatesanps.github.io/property-protest/" />
++    <meta name="twitter:card" content="summary" />
++    <meta name="twitter:title" content="ProtestIQ — Texas Property Tax Protest Analyzer" />
++    <meta
++      name="twitter:description"
++      content="Free, instant check of your Collin or Denton County appraisal — verdict + ready-to-file ARB evidence packets."
++    />
+     <title>ProtestIQ — Texas Property Tax Protest Analyzer</title>
+   </head>
+   <body>
+diff --git a/scripts/gen-sample.ts b/scripts/gen-sample.ts
+index 28cf503..757636e 100644
+--- a/scripts/gen-sample.ts
++++ b/scripts/gen-sample.ts
+@@ -56,6 +56,9 @@ async function main() {
+     landValue: num(s.currvalland),
+     improvementValue: num(s.currvalimprv),
+     priorYearValue: s.prevvalappraised ? num(s.prevvalappraised) : null,
++    rollYear: null,
++    rollLabel: 'Collin CAD appraisal roll',
++    exemptions: null,
+     lat: null,
+     lng: null,
+   };
+diff --git a/src/App.tsx b/src/App.tsx
+index 74d4096..720c95d 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -10,7 +10,7 @@ import {
+ } from './pdf/packet';
+ import { fmtUSD, fmtNum, fmtPsf } from './format';
+ import { adjustToToday } from './adapters/hpi';
+-import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM } from './constants';
++import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
+ 
+ const STEP_LABEL: Record<AppStep, string> = {
+   input: '',
+@@ -449,6 +449,11 @@ function Results({
+   onDownload: (kind: 'board' | 'personal') => void;
+ }) {
+   const { subject, capFloor, equity, market, purchase, rentcastError, floodZone, condition, characteristics, verdict } = result;
++  const season = protestSeason();
++  // Warn from April on, when the current year's notices exist but the dataset
++  // may still be serving last year's certified values.
++  const staleRoll =
++    subject.rollYear != null && subject.rollYear < season.taxYear && new Date().getMonth() >= 3;
+   const isProtest = verdict.code === 'protest';
+   const tone = isProtest
+     ? 'border-emerald-200 bg-emerald-50'
+@@ -511,6 +516,7 @@ function Results({
+           </span>
+         </div>
+         <p className="mt-1 text-sm text-slate-500">{subject.address}</p>
++        <p className="mt-0.5 text-xs text-slate-400">Values from the {subject.rollLabel}.</p>
+         <div className="mt-5 grid grid-cols-2 gap-5 sm:grid-cols-4">
+           <Stat label="Appraised" value={fmtUSD(subject.appraisedValue)} />
+           <Stat label="Market" value={fmtUSD(subject.marketValue)} />
+@@ -532,6 +538,24 @@ function Results({
+             homestead exemption, check your appraisal notice before protesting.
+           </Note>
+         )}
++        {staleRoll && (
++          <Note tone="warn">
++            These values are from the {subject.rollYear} roll — the {season.taxYear} values on your
++            appraisal notice may differ. Use the numbers on your notice for filing; this analysis
++            is still valid as relative evidence among neighbors.
++          </Note>
++        )}
++        {subject.county === 'denton' &&
++          !capFloor.isCapped &&
++          !/\bHS\b|HOMESTEAD/i.test(subject.exemptions ?? '') && (
++            <Note tone="warn">
++              No homestead exemption appears on this record
++              {subject.exemptions ? ` (codes: ${subject.exemptions})` : ''}. If this is your
++              primary residence, filing the exemption is free, can be backdated up to two years,
++              and usually saves more than a protest — check your record at the Denton CAD before
++              your hearing.
++            </Note>
++          )}
+       </section>
+ 
+       {/* equity */}
+@@ -747,21 +771,79 @@ function Results({
+         </section>
+       )}
+ 
+-      {/* how to file */}
++      {/* what to do now — phase-aware for the protest calendar */}
+       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+-        <h3 className="font-semibold text-slate-900">How to file</h3>
+-        <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
+-          <li>
+-            File Comptroller Form {COMPTROLLER_FORM} with your appraisal district by{' '}
+-            {PROTEST_DEADLINE} (or 30 days after your notice).
+-          </li>
+-          <li>Check both grounds: &ldquo;over market value&rdquo; and &ldquo;unequal appraisal.&rdquo;</li>
+-          <li>Attach the <strong>board evidence packet</strong> above.</li>
+-          <li>
+-            Keep the <strong>hearing playbook</strong> for yourself — it has your talking points and
+-            what to bring.
+-          </li>
+-        </ol>
++        <h3 className="font-semibold text-slate-900">What to do now</h3>
++        {season.phase === 'filing' && (
++          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
++            <li>
++              File Comptroller Form {COMPTROLLER_FORM} with your appraisal district by{' '}
++              {PROTEST_DEADLINE} (or 30 days after your notice).
++            </li>
++            <li>Check both grounds: &ldquo;over market value&rdquo; and &ldquo;unequal appraisal.&rdquo;</li>
++            <li>Attach the <strong>board evidence packet</strong> above.</li>
++            <li>
++              Keep the <strong>hearing playbook</strong> for yourself — it has your talking points and
++              what to bring.
++            </li>
++          </ol>
++        )}
++        {season.phase === 'hearing' && (
++          <div className="mt-3 space-y-3 text-sm text-slate-600">
++            <div>
++              <p className="font-medium text-slate-700">Already filed your protest?</p>
++              <ol className="mt-1 list-decimal space-y-1.5 pl-5">
++                <li>
++                  Request the CAD&apos;s evidence for your hearing (Tex. Tax Code §41.461 — they must
++                  provide it free at least 14 days before the hearing). If their own comps support
++                  you, attach them.
++                </li>
++                <li>
++                  Try the <strong>informal review</strong> with a district appraiser first — most
++                  reductions happen there. Bring the <strong>board evidence packet</strong>.
++                </li>
++                <li>
++                  At the ARB hearing, follow the <strong>hearing playbook</strong>: state the
++                  requested value, walk the comp table, stop talking.
++                </li>
++              </ol>
++            </div>
++            <div>
++              <p className="font-medium text-slate-700">
++                Missed the {PROTEST_DEADLINE} deadline?
++              </p>
++              <ol className="mt-1 list-decimal space-y-1.5 pl-5">
++                <li>
++                  You can still file a <strong>late protest for good cause</strong> (§41.44(b)) until
++                  the ARB approves the appraisal records — typically mid-July. File Form{' '}
++                  {COMPTROLLER_FORM} now with a written good-cause explanation.
++                </li>
++                <li>
++                  After that, a <strong>§25.25 motion</strong> can still correct clerical errors
++                  (25.25(c)) or a substantial over-appraisal (25.25(d), value more than one-third —
++                  one-fourth for homesteads — above correct) before taxes go delinquent.
++                </li>
++              </ol>
++            </div>
++          </div>
++        )}
++        {season.phase === 'planning' && (
++          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
++            <li>
++              The regular {season.taxYear} protest window has closed. A <strong>§25.25 motion</strong>{' '}
++              can still fix clerical errors (25.25(c)) or a substantial over-appraisal (25.25(d))
++              before taxes go delinquent on Feb 1.
++            </li>
++            <li>
++              Verify your <strong>homestead exemption</strong> is on file — it&apos;s free and caps
++              taxable-value growth at 10%/year.
++            </li>
++            <li>
++              Save this analysis and your evidence — when the {season.taxYear + 1} notice arrives in
++              April, you&apos;ll be ready to file by {PROTEST_DEADLINE}.
++            </li>
++          </ol>
++        )}
+       </section>
+     </div>
+   );
+diff --git a/src/adapters/collin.ts b/src/adapters/collin.ts
+index f50440f..e48b72f 100644
+--- a/src/adapters/collin.ts
++++ b/src/adapters/collin.ts
+@@ -2,17 +2,20 @@
+  * Collin County Appraisal District adapter
+  *
+  * Data source: Texas Open Data Portal — Socrata SODA API
+- * Dataset: 2025 Appraisal Roll
+- * Base URL: https://data.texas.gov/resource/vffy-snc6.json
++ *
++ * Collin publishes a NEW resource each tax year (plus a year-less "Preliminary"
++ * dataset that carries the current year's notice values during protest season).
++ * COLLIN_SOURCES lists them newest-first; at runtime the adapter probes each one
++ * with the exact field set it needs and uses the first that answers, so the app
++ * automatically picks up the new year's values without a code change — and falls
++ * back to the last certified roll if the schema ever drifts.
+  *
+  * CORS: Socrata endpoints are CORS-enabled — browser-direct fetch works.
+  * No API key required for read access (add app token via VITE_SOCRATA_APP_TOKEN
+  * to raise the per-IP rate limit from ~1 req/s to 1000 req/s).
+  *
+- * NOTE: This dataset does NOT expose a homestead-cap / net-appraised field.
++ * NOTE: These datasets do NOT expose a homestead-cap / net-appraised field.
+  * The equity engine's cap-floor check will show "unavailable" for Collin properties.
+- *
+- * To update the dataset for a future tax year, change COLLIN_RESOURCE_ID.
+  */
+ 
+ import type { SubjectProperty, Comp } from '../types';
+@@ -20,11 +23,23 @@ import { parseAddress, sqlEscape } from './address';
+ 
+ // ── Config ───────────────────────────────────────────────────────────────────
+ 
+-/** Resource ID of the Collin County appraisal roll on data.texas.gov.
+- *  Change this each year when the new roll is published. */
+-export const COLLIN_RESOURCE_ID = 'vffy-snc6'; // 2025 roll
++interface CollinSource {
++  id: string;
++  /** Label used when the roll year can't be read from the data itself. */
++  label: string;
++}
++
++/** Candidate appraisal-roll resources on data.texas.gov, newest-first.
++ *  Add the new certified roll's resource ID at the top each year. */
++const COLLIN_SOURCES: CollinSource[] = [
++  { id: 'nne4-8riu', label: 'preliminary roll' }, // "Collin CAD Appraisal Data - Preliminary"
++  { id: 'vffy-snc6', label: '2025 certified roll' }, // "Collin CAD Appraisal Data - 2025"
++];
+ 
+-const BASE_URL = `https://data.texas.gov/resource/${COLLIN_RESOURCE_ID}.json`;
++/** Default resource (last certified roll) — used before the probe resolves. */
++export const COLLIN_RESOURCE_ID = 'vffy-snc6';
++
++const resourceUrl = (id: string) => `https://data.texas.gov/resource/${id}.json`;
+ 
+ /** Optional Socrata app token — set VITE_SOCRATA_APP_TOKEN in .env.local. */
+ const APP_TOKEN = import.meta.env.VITE_SOCRATA_APP_TOKEN as string | undefined;
+@@ -78,6 +93,9 @@ function toSubject(row: CollinRow): SubjectProperty {
+     landValue: num(row.currvalland),
+     improvementValue: num(row.currvalimprv),
+     priorYearValue: row.prevvalappraised ? num(row.prevvalappraised) : null,
++    rollYear: resolvedRoll?.year ?? null,
++    rollLabel: `Collin CAD ${resolvedRoll?.label ?? 'appraisal roll'}`,
++    exemptions: null,
+     lat: null,
+     lng: null,
+   };
+@@ -109,8 +127,109 @@ function makeHeaders(): HeadersInit {
+   return h;
+ }
+ 
++const SUBJECT_SELECT =
++  'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
++  'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
++  'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
++  'prevvalmarket,prevvalappraised,noticevalappraised,noticedate';
++
++// ── Roll resolution ───────────────────────────────────────────────────────────
++
++export interface CollinRollInfo {
++  id: string;
++  year: number | null;
++  /** e.g. "2026 preliminary roll" or "2025 certified roll". */
++  label: string;
++}
++
++const ROLL_CACHE_KEY = 'protest.collinRoll.v1';
++const ROLL_CACHE_TTL = 24 * 60 * 60 * 1000; // re-probe daily
++
++let resolvedRoll: CollinRollInfo | null = null;
++let resolving: Promise<CollinRollInfo> | null = null;
++
++function readRollCache(): CollinRollInfo | null {
++  try {
++    const raw = sessionStorage.getItem(ROLL_CACHE_KEY);
++    if (!raw) return null;
++    const c = JSON.parse(raw) as CollinRollInfo & { ts: number };
++    if (Date.now() - c.ts > ROLL_CACHE_TTL) return null;
++    if (!COLLIN_SOURCES.some((s) => s.id === c.id)) return null;
++    return { id: c.id, year: c.year, label: c.label };
++  } catch {
++    return null; // no sessionStorage (node) or corrupt cache
++  }
++}
++
++function writeRollCache(info: CollinRollInfo) {
++  try {
++    sessionStorage.setItem(ROLL_CACHE_KEY, JSON.stringify({ ...info, ts: Date.now() }));
++  } catch {
++    /* best effort */
++  }
++}
++
++/** Probe one resource: must answer the full subject field set with ≥1 'A' row. */
++async function probeSource(src: CollinSource): Promise<CollinRollInfo | null> {
++  try {
++    const url = new URL(resourceUrl(src.id));
++    url.searchParams.set('$select', SUBJECT_SELECT);
++    url.searchParams.set('$where', "propcategorycode='A'");
++    url.searchParams.set('$order', 'noticedate DESC');
++    url.searchParams.set('$limit', '1');
++    const resp = await fetch(url.toString(), { headers: makeHeaders() });
++    if (!resp.ok) return null; // 400 = schema mismatch, 404 = gone
++    const rows = (await resp.json()) as CollinRow[];
++    if (!Array.isArray(rows) || rows.length === 0) return null;
++    const yearMatch = rows[0].noticedate?.match(/(\d{4})/);
++    const year = yearMatch ? Number(yearMatch[1]) : null;
++    const baseLabel = src.label.replace(/^\d{4}\s*/, '');
++    return { id: src.id, year, label: year != null ? `${year} ${baseLabel}` : src.label };
++  } catch {
++    return null;
++  }
++}
++
++/** Pick the newest Collin resource that actually answers our queries. */
++async function resolveCollinRoll(): Promise<CollinRollInfo> {
++  if (resolvedRoll) return resolvedRoll;
++  if (resolving) return resolving;
++  resolving = (async () => {
++    const cached = readRollCache();
++    if (cached) {
++      resolvedRoll = cached;
++      return cached;
++    }
++    for (const src of COLLIN_SOURCES) {
++      const info = await probeSource(src);
++      if (info) {
++        resolvedRoll = info;
++        writeRollCache(info);
++        return info;
++      }
++    }
++    // Every probe failed (offline?) — fall back to the last certified roll so the
++    // real lookup can surface its own, more useful error.
++    const fallback = COLLIN_SOURCES[COLLIN_SOURCES.length - 1];
++    resolvedRoll = { id: fallback.id, year: null, label: fallback.label };
++    return resolvedRoll;
++  })();
++  return resolving;
++}
++
++/** Resolved SODA endpoint — shared with the autocomplete adapter. */
++export async function collinBaseUrl(): Promise<string> {
++  const { id } = await resolveCollinRoll();
++  return resourceUrl(id);
++}
++
++/** Vintage of the roll in use (null until the first query resolves it). */
++export function getCollinRollInfo(): CollinRollInfo | null {
++  return resolvedRoll;
++}
++
+ async function soql<T>(params: Record<string, string>): Promise<T[]> {
+-  const url = new URL(BASE_URL);
++  const url = new URL(await collinBaseUrl());
+   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+   const resp = await fetch(url.toString(), { headers: makeHeaders() });
+   if (!resp.ok) {
+@@ -132,11 +251,7 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
+ 
+   const rows = await soql<CollinRow>({
+     $where: `situsbldgnum='${sqlEscape(bldgNum)}' AND situsstreetname LIKE '${sqlEscape(streetName)}%' AND propcategorycode='A'`,
+-    $select:
+-      'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
+-      'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
+-      'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
+-      'prevvalmarket,prevvalappraised,noticevalappraised,noticedate',
++    $select: SUBJECT_SELECT,
+     $limit: '5',
+   });
+ 
+@@ -150,11 +265,7 @@ export async function fetchCollinSubject(address: string): Promise<SubjectProper
+ export async function fetchCollinSubjectByAccount(propid: string): Promise<SubjectProperty> {
+   const rows = await soql<CollinRow>({
+     $where: `propid='${sqlEscape(propid)}'`,
+-    $select:
+-      'propid,situsconcat,situsstreetname,situsbldgnum,currvalappraised,currvalmarket,' +
+-      'currvalland,currvalimprv,imprvmainarea,imprvyearbuilt,nbhdcode,marketareacode,' +
+-      'imprvclasscd,landsizeacres,landsizesqft,imprvpoolflag,propcategorycode,geoid,' +
+-      'prevvalmarket,prevvalappraised,noticevalappraised,noticedate',
++    $select: SUBJECT_SELECT,
+     $limit: '1',
+   });
+   if (rows.length === 0) {
+diff --git a/src/adapters/denton.ts b/src/adapters/denton.ts
+index d18e03e..e6041bc 100644
+--- a/src/adapters/denton.ts
++++ b/src/adapters/denton.ts
+@@ -37,8 +37,14 @@ interface DentonAttrs {
+   exemptions?: string;
+ }
+ 
++interface ArcGisFeature {
++  attributes: DentonAttrs;
++  /** Parcel centroid, present when the query asks for it (outSR=4326 → lng/lat). */
++  centroid?: { x: number; y: number };
++}
++
+ interface ArcGisResponse {
+-  features?: { attributes: DentonAttrs }[];
++  features?: ArcGisFeature[];
+   error?: { message?: string };
+ }
+ 
+@@ -53,11 +59,22 @@ const COMP_FIELDS =
+ 
+ const n = (v?: number): number => (typeof v === 'number' ? v : 0);
+ 
+-async function query(where: string, outFields: string, offset = 0): Promise<DentonAttrs[]> {
++async function query(
++  where: string,
++  outFields: string,
++  offset = 0,
++  withCentroid = false
++): Promise<ArcGisFeature[]> {
+   const url = new URL(BASE);
+   url.searchParams.set('where', where);
+   url.searchParams.set('outFields', outFields);
+   url.searchParams.set('returnGeometry', 'false');
++  if (withCentroid) {
++    // Parcel centroid in WGS84 — feeds the FEMA flood-zone lookup without
++    // needing the (CORS-blocked) Census geocoder. Ignored by older servers.
++    url.searchParams.set('returnCentroid', 'true');
++    url.searchParams.set('outSR', '4326');
++  }
+   url.searchParams.set('resultOffset', String(offset));
+   url.searchParams.set('resultRecordCount', String(PAGE));
+   url.searchParams.set('f', 'json');
+@@ -66,10 +83,11 @@ async function query(where: string, outFields: string, offset = 0): Promise<Dent
+   if (!resp.ok) throw new Error(`Denton ArcGIS error ${resp.status}`);
+   const data = (await resp.json()) as ArcGisResponse;
+   if (data.error) throw new Error(`Denton ArcGIS: ${data.error.message ?? 'query failed'}`);
+-  return (data.features ?? []).map((f) => f.attributes);
++  return data.features ?? [];
+ }
+ 
+-function toSubject(a: DentonAttrs): SubjectProperty {
++function toSubject(f: ArcGisFeature): SubjectProperty {
++  const a = f.attributes;
+   return {
+     account: String(a.pid ?? ''),
+     address: a.situs_full_address ?? '',
+@@ -86,8 +104,13 @@ function toSubject(a: DentonAttrs): SubjectProperty {
+     landValue: n(a.landHSValue) + n(a.landNHSValue),
+     improvementValue: n(a.improvementValue),
+     priorYearValue: null,
+-    lat: null,
+-    lng: null,
++    // The ArcGIS service serves the live roll and updates in place; the current
++    // tax year's values appear as DCAD loads them.
++    rollYear: new Date().getFullYear(),
++    rollLabel: 'Denton CAD live roll',
++    exemptions: a.exemptions ?? null,
++    lat: f.centroid?.y ?? null,
++    lng: f.centroid?.x ?? null,
+   };
+ }
+ 
+@@ -115,10 +138,12 @@ export async function fetchDentonSubject(address: string): Promise<SubjectProper
+ 
+   let feats = await query(
+     `situs_full_address LIKE '${pattern}%' AND stateCodes='A1'`,
+-    SUBJECT_FIELDS
++    SUBJECT_FIELDS,
++    0,
++    true
+   );
+   if (feats.length === 0) {
+-    feats = await query(`situs_full_address LIKE '${pattern}%'`, SUBJECT_FIELDS);
++    feats = await query(`situs_full_address LIKE '${pattern}%'`, SUBJECT_FIELDS, 0, true);
+   }
+   if (feats.length === 0) {
+     throw new Error(`No Denton County property found for "${address}". Check the address and try again.`);
+@@ -128,7 +153,7 @@ export async function fetchDentonSubject(address: string): Promise<SubjectProper
+ 
+ /** Exact lookup by pid — used when an autocomplete suggestion was selected. */
+ export async function fetchDentonSubjectByAccount(pid: string): Promise<SubjectProperty> {
+-  const feats = await query(`pid=${Number(pid)}`, SUBJECT_FIELDS);
++  const feats = await query(`pid=${Number(pid)}`, SUBJECT_FIELDS, 0, true);
+   if (feats.length === 0) {
+     throw new Error(`Denton County property ${pid} could not be loaded.`);
+   }
+@@ -147,7 +172,7 @@ export async function fetchDentonComps(
+   let offset = 0;
+   for (;;) {
+     const pageRows = await query(where, COMP_FIELDS, offset);
+-    all.push(...pageRows);
++    all.push(...pageRows.map((f) => f.attributes));
+     if (pageRows.length < PAGE) break;
+     offset += PAGE;
+   }
+diff --git a/src/adapters/suggest.ts b/src/adapters/suggest.ts
+index d701199..a74042c 100644
+--- a/src/adapters/suggest.ts
++++ b/src/adapters/suggest.ts
+@@ -11,7 +11,7 @@
+  */
+ 
+ import type { County } from '../types';
+-import { COLLIN_RESOURCE_ID } from './collin';
++import { collinBaseUrl } from './collin';
+ 
+ export interface AddressSuggestion {
+   /** Pretty, title-cased label for the dropdown. */
+@@ -23,7 +23,6 @@ export interface AddressSuggestion {
+   account: string;
+ }
+ 
+-const COLLIN_BASE = `https://data.texas.gov/resource/${COLLIN_RESOURCE_ID}.json`;
+ const DENTON_BASE =
+   'https://gis.dentoncounty.gov/arcgis/rest/services/Parcels_FC/MapServer/0/query';
+ 
+@@ -44,7 +43,9 @@ function prettyAddress(raw: string): string {
+ const esc = (s: string) => s.replace(/'/g, "''");
+ 
+ async function suggestCollin(prefix: string, signal?: AbortSignal): Promise<AddressSuggestion[]> {
+-  const url = new URL(COLLIN_BASE);
++  // Same resolved resource as the subject/comps queries (2026 preliminary roll
++  // when available, falling back to the last certified roll).
++  const url = new URL(await collinBaseUrl());
+   url.searchParams.set('$select', 'propid,situsconcat');
+   url.searchParams.set(
+     '$where',
+diff --git a/src/constants.ts b/src/constants.ts
+index 1716fbb..309c13d 100644
+--- a/src/constants.ts
++++ b/src/constants.ts
+@@ -12,3 +12,22 @@ export const COMPTROLLER_FORM = '50-132';
+ 
+ export const DISCLAIMER =
+   'Estimates only - not legal or tax advice. The Appraisal Review Board makes the final decision.';
++
++// ─── Protest season ───────────────────────────────────────────────────────────
++
++export type SeasonPhase =
++  /** Jan 1 – May 15: notices arrive, protests can be filed. */
++  | 'filing'
++  /** May 16 – Aug 31: deadline passed for most; informal reviews + ARB hearings run. */
++  | 'hearing'
++  /** Sep 1 – Dec 31: records approved; only §25.25 corrections + next-year prep remain. */
++  | 'planning';
++
++/** Which phase of the Texas protest calendar we are in, and the tax year at issue. */
++export function protestSeason(now = new Date()): { phase: SeasonPhase; taxYear: number } {
++  const taxYear = now.getFullYear();
++  const m = now.getMonth(); // 0-based
++  const filing = m < 4 || (m === 4 && now.getDate() <= 15);
++  const phase: SeasonPhase = filing ? 'filing' : m <= 7 ? 'hearing' : 'planning';
++  return { phase, taxYear };
++}
+diff --git a/src/engine/run.ts b/src/engine/run.ts
+index 6b7bc6e..692dc98 100644
+--- a/src/engine/run.ts
++++ b/src/engine/run.ts
+@@ -116,9 +116,25 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
+     subject.lng = geocode.lng;
+   }
+ 
++  // Coordinates feed the flood-zone lookup. Denton supplies a parcel centroid;
++  // for Collin (no geometry in the Socrata roll) try the Census geocoder as a
++  // best-effort fallback, in parallel with the comp fetch so it costs no time.
++  const coordsPromise =
++    subject.lat == null || subject.lng == null
++      ? geocodeAddress(subject.address || address).catch(() => null)
++      : null;
++
+   onStep?.('loading_comps');
+   const comps = await fetchComps(subject);
+ 
++  if (coordsPromise) {
++    const geo = await coordsPromise;
++    if (geo) {
++      subject.lat = geo.lat;
++      subject.lng = geo.lng;
++    }
++  }
++
+   const capFloor = computeCapFloor(subject);
+   const equity = computeEquity(subject, comps);
+ 
+diff --git a/src/pdf/packet.ts b/src/pdf/packet.ts
+index 6436d55..e2719ec 100644
+--- a/src/pdf/packet.ts
++++ b/src/pdf/packet.ts
+@@ -13,7 +13,7 @@
+ 
+ import { rgb } from 'pdf-lib';
+ import type { AnalysisResult } from '../engine/run';
+-import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE } from '../constants';
++import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE, protestSeason } from '../constants';
+ import { fmtUSD, fmtNum, fmtPsf } from '../format';
+ import {
+   createDoc,
+@@ -175,7 +175,7 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
+   titleBand(
+     b,
+     'Property Tax Protest - Evidence Packet',
+-    `${countyLabel(subject.county)}   |   For the Appraisal Review Board   |   Generated ${new Date().toLocaleDateString('en-US')}`
++    `${countyLabel(subject.county)}   |   ${subject.rollLabel}   |   For the Appraisal Review Board   |   Generated ${new Date().toLocaleDateString('en-US')}`
+   );
+ 
+   // Requested value up top so the appraiser sees the ask immediately.
+@@ -448,8 +448,12 @@ export async function generatePersonalPacket(result: AnalysisResult): Promise<Ui
+ 
+   // ── How it works ──
+   b.heading('How the Protest Works (3 steps)');
++  const fileStep =
++    protestSeason().phase === 'filing'
++      ? `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`
++      : `1. FILE. The regular ${PROTEST_DEADLINE} deadline has passed. If you have not filed, you may still submit Form ${COMPTROLLER_FORM} as a LATE protest for good cause (Tex. Tax Code 41.44(b)) until the ARB approves the records, or pursue a Sec. 25.25 correction motion. If you already filed, skip to step 2. Check BOTH boxes: "over market value" and "unequal appraisal."`;
+   const steps = [
+-    `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`,
++    fileStep,
+     '2. INFORMAL MEETING. Most cases settle here. You meet one-on-one with a district appraiser, show your evidence, and they often make an offer on the spot. If the offer is close to your number, you can accept and you are done.',
+     '3. FORMAL ARB HEARING. If you do not settle, you present to a 3-person Appraisal Review Board. It is informal - about 15 minutes. You speak, the district appraiser responds, the board decides that day.',
+   ];
+@@ -533,6 +537,12 @@ export function downloadPacket(bytes: Uint8Array, filename: string) {
+   const a = document.createElement('a');
+   a.href = url;
+   a.download = filename;
++  document.body.appendChild(a);
+   a.click();
+-  URL.revokeObjectURL(url);
++  // Safari (especially iOS) can cancel the download if the URL is revoked
++  // before the save sheet finishes with it.
++  setTimeout(() => {
++    a.remove();
++    URL.revokeObjectURL(url);
++  }, 10_000);
+ }
+diff --git a/src/types.ts b/src/types.ts
+index afd2c61..e2dbd7a 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -21,6 +21,12 @@ export interface SubjectProperty {
+   landValue: number;
+   improvementValue: number;
+   priorYearValue: number | null;
++  /** Tax year of the appraisal roll the values came from (null if unknown). */
++  rollYear: number | null;
++  /** Human label for the data vintage, e.g. "2026 preliminary roll". */
++  rollLabel: string;
++  /** Raw exemption codes from the roll (Denton only; null when not published). */
++  exemptions: string | null;
+   lat: number | null;
+   lng: number | null;
+ }
+-- 
+2.43.0
+

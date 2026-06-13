@@ -13,6 +13,11 @@ export function median(nums: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+function extractStreet(address: string): string {
+  // Extract street name (before ","). E.g. "1069 ANGEL FALLS DR" from "1069 ANGEL FALLS DR, FRISCO, TX"
+  return address.split(',')[0].trim();
+}
+
 export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityResult | null {
   if (subject.livingAreaSqft <= 0) return null;
   const valid = comps.filter((c) => c.livingAreaSqft > 0 && c.appraisedValue > 0);
@@ -20,6 +25,18 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
 
   const subjectPsf = subject.appraisedValue / subject.livingAreaSqft;
   const medAll = median(valid.map((c) => c.pricePerSqft));
+
+  // ── same-street comps: when available, these are the most directly comparable.
+  // Extract street name from subject and filter comps on the same street.
+  const subjectStreet = extractStreet(subject.address);
+  const sameStreet = valid.filter(
+    (c) => extractStreet(c.address).toUpperCase() === subjectStreet.toUpperCase()
+  );
+  const hasSameStreet = sameStreet.length >= 3;
+  const sameStreetMedianPsf = hasSameStreet ? median(sameStreet.map((c) => c.pricePerSqft)) : null;
+  const indicatedValueSameStreet = sameStreetMedianPsf
+    ? sameStreetMedianPsf * subject.livingAreaSqft
+    : null;
 
   // refined: similar size (+/-20%) and age (+/-12 yr)
   for (const c of valid) {
@@ -97,5 +114,8 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
     indicatedImprovementValue,
     indicatedLandValue,
     indicatedValueSplit,
+    sameStreetComps: [...sameStreet].sort((a, b) => a.pricePerSqft - b.pricePerSqft),
+    sameStreetMedianPsf,
+    indicatedValueSameStreet,
   };
 }
