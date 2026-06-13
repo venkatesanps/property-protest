@@ -1,0 +1,214 @@
+═══════════════════════════════════════════════════════════════════════════
+  HOW TO REGENERATE YOUR BOARD & PERSONAL PDFS (WITH STREET-LEVEL COMPS)
+═══════════════════════════════════════════════════════════════════════════
+
+STEP 1: GO TO THE LIVE SITE
+  URL: https://venkatesanps.github.io/property-protest/
+
+  (If it's slow, wait 1–2 seconds for the page to load fully)
+
+STEP 2: ENTER YOUR ADDRESS
+  In the "Address" field, type exactly:
+    1069 Angel Falls Dr, Frisco TX 75036
+
+STEP 3: SELECT COUNTY
+  A dropdown menu should ask you to select your county.
+  Choose: DENTON
+
+STEP 4: RUN ANALYSIS
+  Click the blue "Run Analysis" button.
+
+  The app will:
+  • Fetch your property from Denton CAD
+  • Pull all neighborhood comps
+  • Detect the 3 Angel Falls Dr street-level comps
+  • Calculate indicated value using street-level median
+  • Show results in ~3–5 seconds
+
+STEP 5: REVIEW RESULTS
+  Look for:
+
+  ✓ "YOUR BOTTOM LINE" callout:
+    Should show a GREEN box (not yellow) with:
+      Ask the board to set your value at: $808,789
+      Open the conversation at: $776,000 (96% of ask)
+      Tax savings: ~$92/year
+
+  ✓ "Your Strongest Arguments" section:
+    Should lead with:
+      "On your own street, comparable homes are appraised at $241.87/sqft..."
+
+  ✓ "Comparable properties" comp table:
+    Should show 3 Angel Falls Dr homes at the TOP (lowest $/sqft)
+
+  If any of these are missing, refresh the page and try again.
+
+STEP 6: DOWNLOAD BOARD PACKET
+  Click the green "Download Board Evidence Packet" button.
+
+  This PDF will include:
+  • Requested value: $808,789
+  • Primary basis: Equity - same street (3 comps)
+  • Subject property card
+  • 3 Angel Falls Dr comps highlighted in the table
+  • Full comp analysis + Redfin ZIP trend data
+
+  Save as: ProtestIQ_board_1069_ANGEL_FALLS_DR.pdf
+
+STEP 7: DOWNLOAD PERSONAL PLAYBOOK
+  Click the green "Download Personal Hearing Playbook" button.
+
+  This PDF will include:
+  • GREEN "BOTTOM LINE" section with $808,789 ask
+  • "Your Strongest Arguments" leading with street-level comps
+  • "What To Say" talking points mentioning your 3 neighbors
+  • Bring This To Your Hearing checklist
+  • Do's & Don'ts
+
+  Save as: ProtestIQ_personal_1069_ANGEL_FALLS_DR.pdf
+
+═══════════════════════════════════════════════════════════════════════════
+WHAT THE NEW PDFs SHOULD SAY (Key Changes)
+═══════════════════════════════════════════════════════════════════════════
+
+BOARD PACKET (Page 1):
+  ┌─────────────────────────────────────────────────┐
+  │ Requested appraised value: $808,789             │
+  │ Reduction of $4,588 from the current $813,377   │
+  │ (est. $92/yr in tax savings)                     │
+  │ Primary basis: equity - same street (3 comps)   │
+  └─────────────────────────────────────────────────┘
+
+PERSONAL PLAYBOOK (Page 1):
+  ┌─────────────────────────────────────────────────┐
+  │ YOUR BOTTOM LINE                                │
+  │ Ask the board to set your value at: $808,789    │
+  │ Open the conversation at $776,000               │
+  │ - it gives you room to settle.                  │
+  │ If you win the full reduction, you save roughly │
+  │ $92 per year.                                   │
+  └─────────────────────────────────────────────────┘
+
+PERSONAL PLAYBOOK (Page 1, Arguments section):
+  Should lead with:
+  "On your own street, comparable homes are appraised at $241.87/sqft
+   (range: $241.62–$242.57). Applying that median to your 3,344 sqft
+   gives an indicated value of $808,789. Same street = most directly
+   comparable under §41.43(b)(3)."
+
+═══════════════════════════════════════════════════════════════════════════
+IF SOMETHING LOOKS WRONG
+═══════════════════════════════════════════════════════════════════════════
+
+Problem: Personal playbook still shows old values or neighborhood analysis
+
+Solution:
+  1. Hard refresh the page (Cmd+Shift+R on Mac, Ctrl+Shift+R on Windows)
+  2. Clear your browser cache
+  3. Try in a different browser (Chrome, Safari, Firefox)
+  4. Contact venkatesan.ps@gmail.com with screenshot if issue persists
+
+Problem: App shows "Probably not worth protesting this year" instead of
+         green "Bottom Line" box
+
+Solution:
+  This means the code hasn't updated yet. The GitHub Actions deploy takes
+  ~2 minutes after code was pushed. Wait 5 minutes, then refresh.
+
+═══════════════════════════════════════════════════════════════════════════
+WHAT TO DO WITH THE PDFs
+═══════════════════════════════════════════════════════════════════════════
+
+BOARD PACKET:
+  • Print 4 copies (1 for you, 3 for ARB members)
+  • Bring to informal meeting with appraiser
+  • Hand one to each ARB member at formal hearing
+  • Use as primary evidence in presentation
+
+PERSONAL PLAYBOOK:
+  • Print 1 copy for your own prep
+  • DO NOT submit to ARB (it says "Personal prep" at top)
+  • Use to memorize talking points and strategy
+  • Bring to both informal meeting and hearing for reference
+
+═══════════════════════════════════════════════════════════════════════════
+NEXT STEPS AFTER DOWNLOAD
+═══════════════════════════════════════════════════════════════════════════
+
+1. Print 4 copies of Board Packet (at FedEx/Staples or home printer)
+
+2. Read through Personal Playbook once to memorize your 3 comp addresses
+   and key facts
+
+3. Read CASE_STRATEGY_1069_ANGEL_FALLS_DR.md (the full analysis)
+
+4. Memorize QUICK_REFERENCE_TALKING_POINTS.txt (the 1-minute elevator pitch)
+
+5. Call DCAD at (940) 349-3800:
+   "I'm requesting an informal meeting to discuss my protest on Property ID
+    659881, 1069 Angel Falls Dr. I have comparable analysis to present."
+
+6. Attend informal meeting with all documents
+
+7. If no settlement, proceed to ARB formal hearing
+
+═══════════════════════════════════════════════════════════════════════════
+FAQ
+═══════════════════════════════════════════════════════════════════════════
+
+Q: Will the app always show $808,789 as the request?
+A: Yes. The 3 Angel Falls Dr comps have median $241.87/sqft, which yields
+   $808,789. This is consistent and defensible.
+
+Q: What if DCAD adds more comps to their analysis?
+A: The statute allows "a reasonable number." 3 same-street comps is clearly
+   reasonable. Anything they do to defend their position gives you more
+   evidence of inconsistency to cite in the hearing.
+
+Q: Should I use the app's numbers or calculate them myself?
+A: Use the app's numbers. They're pulled live from Denton CAD and are
+   verifiable. DCAD can't argue with their own data.
+
+Q: Can I print just one copy of the Board Packet?
+A: No. You must provide one to each of the 3 ARB members + 1 for yourself.
+   4 copies total. Print on good quality paper (color if possible).
+
+Q: Do I need the Redfin ZIP trend data in the Board Packet?
+A: It's useful context (shows ZIP 75036 median sale is $546K, far below
+   your appraised $836K, proving overvaluation). Leave it in.
+
+═══════════════════════════════════════════════════════════════════════════
+TIMELINE
+═══════════════════════════════════════════════════════════════════════════
+
+TODAY (June 13):
+  • Download PDFs from app
+  • Print Board Packets (4 copies)
+  • Review case strategy documents
+
+WITHIN 1 WEEK:
+  • Call DCAD to request informal meeting
+  • Schedule meeting (usually within 10 days)
+
+INFORMAL MEETING (2–3 weeks out):
+  • Present Board Packet
+  • Use talking points
+  • Target settlement: $815K–$825K appraised
+  • If no settlement, ask when ARB hearing is scheduled
+
+FORMAL HEARING (usually 30 days after informal meeting):
+  • Hand out Board Packets to ARB members
+  • Present your argument (2 minutes)
+  • Answer their questions
+  • Board votes same day or within 5 business days
+
+RESULT:
+  • Best case: Informal settlement at $815K–$825K
+  • Good case: ARB hearing reduces to $808K–$815K
+  • Acceptable: Any reduction under current $836K
+
+═══════════════════════════════════════════════════════════════════════════
+END OF INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════════════
+
+Questions? Email: venkatesan.ps@gmail.com

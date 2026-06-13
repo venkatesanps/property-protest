@@ -1,0 +1,168 @@
+═══════════════════════════════════════════════════════════════════════════
+  TALKING POINTS FOR DCAD INFORMAL MEETING & ARB HEARING
+  1069 Angel Falls Dr, Frisco TX 75036
+═══════════════════════════════════════════════════════════════════════════
+
+YOUR ASK:
+  Reduce appraised value from $836,185 to $808,789
+  Basis: §41.43(b)(3) Unequal Appraisal
+
+KEY FACTS (Memorize these):
+  ✓ Current appraised: $836,185 ($250.06/sqft)
+  ✓ Your request: $808,789 ($241.87/sqft)
+  ✓ Street comps median: $241.87/sqft (3 homes: 925, 973, 1093 Angel Falls Dr)
+  ✓ Tax savings: ~$92/year + lower baseline for future years
+  ✓ Same street = most directly comparable under statute
+
+───────────────────────────────────────────────────────────────────────────
+AT THE INFORMAL MEETING
+───────────────────────────────────────────────────────────────────────────
+
+OPENING (1 minute):
+  "I'm here to request a reduction based on unequal appraisal. Three homes
+   on my street—Angel Falls Drive—are far more comparable than the Rolling
+   Thunder Road homes you used. Same street, same class VB2, same year built,
+   same land value. Those are appraised at $241–242 per sqft; mine is at $250.
+   I'm requesting the median of those three homes: $808,789."
+
+IF THEY ASK "WHY ARE THOSE HOMES MORE COMPARABLE?"
+  "Same street is the most direct comparison under the statute. We have:
+   • Same street address (Angel Falls Dr)
+   • Same quality class (VB2)
+   • Same year built (2015–2016, all within 1 year)
+   • Same land value ($183,425—your own data confirms this)
+   • Similar size (3,203–3,344 sqft, within 4% instead of ±20%)
+   • Same neighborhood (SF0414A)
+   • Same school district (Frisco ISD)
+
+   Your Rolling Thunder Road comps are a parallel street a few blocks away.
+   My street has three homes that match mine far better."
+
+IF THEY SAY "WE USED ROLLING THUNDER BECAUSE..."
+  "I understand, but the statute says 'reasonable comparable properties
+   appropriately adjusted.' Three homes on the same street are the most
+   reasonable. Your own market comps show $248/sqft median, which is below
+   my $250/sqft appraised value. So even by that standard, I'm overvalued."
+
+IF THEY COUNTER WITH A LOWER OFFER (e.g., $825,000):
+  "I appreciate the movement. Let me confirm—if you move to $820,000,
+   that's based on applying the same-street comparable analysis, correct?"
+
+  [If yes: Accept if within your range ($815K–$825K)]
+  [If no: "Let me show you why the three Angel Falls homes support $808,789..."]
+
+IF THEY REFUSE TO MOVE:
+  "Then we'll proceed to the formal ARB hearing where I'll present these
+   three same-street comparables. The statute clearly contemplates that
+   standard. I'm confident the board will see the equity issue."
+
+───────────────────────────────────────────────────────────────────────────
+AT THE FORMAL ARB HEARING
+───────────────────────────────────────────────────────────────────────────
+
+HAND OUT (to each of 3 board members):
+  1. Board Evidence Packet (from app) — shows Angel Falls comps table
+  2. DCAD's June 3 evidence packet (page 2 of equity analysis highlighted)
+  3. This talking points page
+
+OPENING STATEMENT (2 minutes):
+  "I'm requesting a reduction from $836,185 to $808,789 under §41.43(b)(3)
+   on the basis of unequal appraisal.
+
+   Your evidence shows I'm overvalued in two ways:
+
+   First, your own market sales indicate $248 per square foot. I'm appraised
+   at $250. I'm already above your market evidence.
+
+   Second, your equity comps on Rolling Thunder Road are less comparable than
+   three homes on my own street—Angel Falls Drive. All three are:
+   • Same street
+   • Same VB2 class
+   • Built 2015–2016
+   • Same $183,425 land value
+   • Within 4% of my square footage
+
+   Those three homes are appraised at $241–$243 per sqft. The median is
+   $241.87. Applying that to my 3,344 sqft gives $808,789, which is what
+   I'm requesting.
+
+   This is a straightforward unequal appraisal case. Same street is the most
+   comparable, and the median of those three homes is the defensible value."
+
+WAIT FOR DCAD RESPONSE, THEN:
+  "I notice your own equity analysis indicated $852,928 but appraised me at
+   $836,185—$17,000 below your own indicated value. There's clearly room for
+   adjustment. The three same-street homes provide the clearest basis for
+   that adjustment."
+
+KEY STATS TO CITE (if they ask):
+  • Subject $/sqft: $250.06
+  • Comp 1 (925 Angel Falls): $242.57/sqft
+  • Comp 2 (973 Angel Falls): $241.62/sqft
+  • Comp 3 (1093 Angel Falls): $241.87/sqft
+  • Median: $241.87/sqft
+  • Indicated value: $241.87 × 3,344 = $808,789
+
+CLOSING:
+  "The statute requires fair comparison to 'reasonable comparable properties
+   appropriately adjusted.' Three homes on my street meet that standard.
+   I'm requesting $808,789 based on the median of those properties. Thank you."
+
+───────────────────────────────────────────────────────────────────────────
+DO'S AND DON'Ts
+───────────────────────────────────────────────────────────────────────────
+
+DO:
+  ✓ Lead with street-level comps (strongest argument)
+  ✓ Be polite and professional
+  ✓ Stick to data (let numbers speak)
+  ✓ Cite the statute by name (§41.43(b)(3))
+  ✓ Use DCAD's own evidence against them
+  ✓ Accept a reasonable settlement ($815K–$825K)
+  ✓ Stay calm if they counter
+
+DON'T:
+  ✗ Mention what you paid for the home (can hurt your case in TX)
+  ✗ Say "my taxes are too high" (only value is in scope)
+  ✗ Accept lowball first offer without countering
+  ✗ Get emotional or argumentative
+  ✗ Reference unrelated properties or circumstances
+  ✗ Commit to accepting offer without writing it down
+
+───────────────────────────────────────────────────────────────────────────
+IF THEY SAY "WE CAN'T USE THOSE HOMES BECAUSE..."
+───────────────────────────────────────────────────────────────────────────
+
+"...they're all in the same neighborhood"
+  → "Yes, they are. That makes them MORE comparable, not less. The statute
+     contemplates comparing to 'a reasonable number.' Three homes on the same
+     street of the same class is the definition of reasonable."
+
+"...we didn't pull them as comps"
+  → "You should have. They're in your system. They meet all the refinement
+     criteria better than Rolling Thunder Rd. I'm asking the board to
+     consider them now."
+
+"...we use a broader market area"
+  → "For market value, yes. But for §41.43(b)(3) equity analysis, the statute
+     allows—and encourages—using the most directly comparable properties.
+     These three are far more comparable than homes a few blocks away on a
+     different street."
+
+───────────────────────────────────────────────────────────────────────────
+SETTLEMENT TARGETS
+───────────────────────────────────────────────────────────────────────────
+
+PREFERRED:     $808,789 (your full request)
+ACCEPT:        $815,000–$825,000 (reasonable settlement)
+WALK AWAY:     Anything >$830,000 (go to hearing instead)
+
+If they offer $820,000:
+  → That's ~$60/year tax savings plus lower baseline. ACCEPT.
+
+If they offer $810,000:
+  → That's very close to your request. ACCEPT.
+
+If they offer $830,000 or higher:
+  → "I appreciate you reviewing this, but that's too close to current value.
+     I'll pursue the hearing." [DCAD often moves at hearing anyway.]
