@@ -13,6 +13,7 @@ import { adjustToToday } from './adapters/hpi';
 import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
 import { getZipTrend } from './adapters/redfinTrend';
 import { CADEvidenceUpload } from './components/CADEvidenceUpload';
+import { BulkCompsModal } from './components/BulkCompsModal';
 import { analyzeCADEvidence } from './engine/counter-strategy';
 
 const STEP_LABEL: Record<AppStep, string> = {
@@ -45,6 +46,7 @@ function App() {
 
   // optional evidence inputs
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showBulkCompsModal, setShowBulkCompsModal] = useState(false);
   const [rentcastKey, setRentcastKey] = useState(
     () => localStorage.getItem(RENTCAST_KEY_STORAGE) ?? ''
   );
@@ -148,6 +150,9 @@ function App() {
   function removeComp(i: number) {
     setManualComps((c) => c.filter((_, idx) => idx !== i));
   }
+  function addBulkComps(comps: ManualComp[]) {
+    setManualComps((c) => [...c, ...comps]);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
@@ -213,6 +218,8 @@ function App() {
                 setRentcastKey={setRentcastKey}
                 manualComps={manualComps}
                 addManualComp={addManualComp}
+                addBulkComps={addBulkComps}
+                setShowBulkCompsModal={setShowBulkCompsModal}
                 updateComp={updateComp}
                 removeComp={removeComp}
                 purchasePrice={purchasePrice}
@@ -225,6 +232,13 @@ function App() {
                 setCondition={setCondition}
                 characteristics={characteristics}
                 setCharacteristics={setCharacteristics}
+              />
+            )}
+
+            {showBulkCompsModal && (
+              <BulkCompsModal
+                onAdd={addBulkComps}
+                onClose={() => setShowBulkCompsModal(false)}
               />
             )}
 
@@ -1602,6 +1616,8 @@ function AdvancedPanel(props: {
   setRentcastKey: (v: string) => void;
   manualComps: ManualComp[];
   addManualComp: () => void;
+  addBulkComps: (comps: ManualComp[]) => void;
+  setShowBulkCompsModal: (show: boolean) => void;
   updateComp: (i: number, patch: Partial<ManualComp>) => void;
   removeComp: (i: number) => void;
   purchasePrice: string;
@@ -1807,13 +1823,22 @@ function AdvancedPanel(props: {
       <div>
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-slate-700">Recent comparable sales</label>
-          <button
-            type="button"
-            onClick={props.addManualComp}
-            className="rounded-lg bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300"
-          >
-            + Add comp
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => props.setShowBulkCompsModal(true)}
+              className="rounded-lg bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200"
+            >
+              📋 Bulk paste
+            </button>
+            <button
+              type="button"
+              onClick={props.addManualComp}
+              className="rounded-lg bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              + Add comp
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-xs text-slate-500">
           Actual sold prices on your street. Use the <strong>Find free sold comps</strong> links
