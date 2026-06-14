@@ -186,6 +186,31 @@ function App() {
             neighbors, and build two ready-to-use protest packets &mdash; in seconds.
           </p>
 
+          {/* Quick Start Guide */}
+          <div className="mt-8 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-6 max-w-2xl">
+            <div className="flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">✓</span>
+              <div>
+                <p className="font-semibold text-slate-900">3-Step Winning Strategy</p>
+                <ol className="mt-3 space-y-3 text-sm text-slate-700">
+                  <li className="flex gap-3">
+                    <span className="font-bold text-emerald-700">1.</span>
+                    <span><strong>Enter your address</strong> — We analyze your appraisal vs. your county records</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="font-bold text-emerald-700">2.</span>
+                    <span><strong>Add comps</strong> — Paste homes that sold on your street or nearby (use 📋 Bulk Paste button)</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="font-bold text-emerald-700">3.</span>
+                    <span><strong>Download packets</strong> — Board Packet for your ARB hearing + Personal Playbook for strategy</span>
+                  </li>
+                </ol>
+                <p className="mt-3 text-xs text-emerald-700 font-medium">💡 Pro tip: Same-street comps are strongest evidence. We'll show you exactly how to find and format them.</p>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-7 max-w-2xl">
             <AddressAutocomplete
               value={address}
@@ -205,13 +230,17 @@ function App() {
               busy={busy}
             />
 
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="mt-3 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline"
-            >
-              {showAdvanced ? '− Hide' : '+ Add'} evidence to strengthen your case (optional)
-            </button>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${showAdvanced ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+              >
+                <span className="text-lg">{showAdvanced ? '−' : '+'}</span>
+                <span>Add comparable sales & other evidence</span>
+              </button>
+              <span className="inline-block bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded">RECOMMENDED</span>
+            </div>
 
             {showAdvanced && (
               <AdvancedPanel
@@ -272,7 +301,15 @@ function App() {
           <>
             <button
               type="button"
-              onClick={() => { setResult(null); setAddress(''); setError(null); setSelected(null); }}
+              onClick={() => {
+                setResult(null);
+                setAddress('');
+                setError(null);
+                setSelected(null);
+                setManualComps([]);
+                setCADEvidence(null);
+                setCADAnalysis(null);
+              }}
               className="mb-6 flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
             >
               <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -1842,30 +1879,33 @@ function AdvancedPanel(props: {
       </div>
 
       {/* ── Manual comps ──────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-semibold text-slate-700">Recent comparable sales</label>
-          <div className="flex gap-2">
+      <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <label className="text-sm font-semibold text-slate-900">💡 Add comparable sales (strongest evidence)</label>
+            <p className="mt-1 text-xs text-slate-700">
+              Homes on your street that sold recently. Same-street comps are most powerful for ARB hearings.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
             <button
               type="button"
               onClick={() => props.setShowBulkCompsModal(true)}
-              className="rounded-lg bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200"
+              className="rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap shadow-md"
             >
-              📋 Bulk paste
+              📋 Bulk Paste
             </button>
             <button
               type="button"
               onClick={props.addManualComp}
-              className="rounded-lg bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300"
+              className="rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              + Add comp
+              + Single
             </button>
           </div>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Actual sold prices on your street. Use the <strong>Find free sold comps</strong> links
-          in your results to open Zillow/Redfin sold searches — Texas hides ~half of sale prices,
-          so a realtor CMA or the CAD&apos;s §41.461 comp grid fills the gaps.
+        <p className="mt-3 text-xs text-slate-600 border-t border-emerald-200 pt-3">
+          <strong>How to find comps:</strong> Go to Zillow or Redfin &rarr; Filter "Sold" homes &rarr; Search your street &rarr; Copy addresses, sqft, prices, dates &rarr; Paste here using the 📋 Bulk Paste button.
         </p>
         {props.manualComps.length > 0 && (
           <div className="mt-2 grid grid-cols-12 gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
