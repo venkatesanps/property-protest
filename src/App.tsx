@@ -653,9 +653,9 @@ function Results({
           {equity.sameStreetComps && equity.sameStreetComps.length >= 3 && (
             <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3">
               <p className="text-xs font-semibold text-emerald-900">
-                ✓ Found {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
-                  ? `${equity.refinedSameStreetComps.length} best-match same-street comps (of ${equity.sameStreetComps.length} on same street)`
-                  : `${equity.sameStreetComps.length} same-street comps`
+                ✓ {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length < equity.sameStreetComps.length
+                  ? `Selected the ${equity.refinedSameStreetComps.length} best-match comps (of ${equity.sameStreetComps.length} on your street)`
+                  : `Found ${equity.sameStreetComps.length} same-street comps`
                 } — using as PRIMARY basis (§41.43(b)(3))
               </p>
             </div>
