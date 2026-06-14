@@ -54,18 +54,44 @@ export function BulkCompsModal({
 
         {step === 'paste' ? (
           <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-600">
-              Paste your comparable properties in CSV or tab-separated format. Include columns for:
-              <br />
-              <strong>address, sqft, price, year</strong>
-            </p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold text-emerald-900">📋 How Bulk Paste Works</p>
+              <ol className="text-xs text-emerald-800 space-y-2 list-decimal list-inside">
+                <li>
+                  <strong>Find comparable sales:</strong> Homes on your street or very nearby that sold
+                  recently (last 24 months preferred). Use Zillow/Redfin sold filters.
+                </li>
+                <li>
+                  <strong>Format:</strong> Paste as CSV (comma-separated) or pipe-separated. Columns:
+                  address, sqft, price, year. Column order doesn't matter.
+                </li>
+                <li>
+                  <strong>App calculates:</strong> Median price and $/sqft from your comps → your
+                  "indicated value" (what ARB thinks your home is worth).
+                </li>
+                <li>
+                  <strong>Settlement targets:</strong> Ask = indicated value. Target = 60% settlement
+                  of gap. Floor = don't accept below this.
+                </li>
+              </ol>
+            </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-700 font-mono">
-              Example:
-              <br />
-              973 ANGEL FALLS DR, FRISCO TX | 3228 | 780000 | 2016
-              <br />
-              1093 ANGEL FALLS DR, FRISCO TX | 3204 | 775000 | 2015
+            <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-700 font-mono space-y-2">
+              <p className="font-semibold text-slate-900">Format Examples:</p>
+              <p className="mt-2 text-slate-600">Comma-separated:</p>
+              <p className="text-slate-600">
+                Address,Sqft,Price,Year
+                <br />
+                973 ANGEL FALLS DR,3228,780000,2016
+                <br />
+                1093 ANGEL FALLS DR,3204,775000,2015
+              </p>
+              <p className="mt-2 text-slate-600">Or pipe-separated (|):</p>
+              <p className="text-slate-600">
+                973 ANGEL FALLS DR | 3228 | 780000 | 2016
+                <br />
+                1093 ANGEL FALLS DR | 3204 | 775000 | 2015
+              </p>
             </div>
 
             <textarea

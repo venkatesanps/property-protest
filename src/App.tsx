@@ -14,6 +14,7 @@ import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from '.
 import { getZipTrend } from './adapters/redfinTrend';
 import { CADEvidenceUpload } from './components/CADEvidenceUpload';
 import { BulkCompsModal } from './components/BulkCompsModal';
+import { CompAnalysis } from './components/CompAnalysis';
 import { analyzeCADEvidence } from './engine/counter-strategy';
 
 const STEP_LABEL: Record<AppStep, string> = {
@@ -282,6 +283,7 @@ function App() {
             <Results
               result={result}
               onDownload={handleDownload}
+              manualComps={manualComps}
               cadEvidence={cadEvidence}
               cadAnalysis={cadAnalysis}
               onCADEvidenceLoaded={(evidence) => {
@@ -474,12 +476,14 @@ function AddressAutocomplete({
 function Results({
   result,
   onDownload,
+  manualComps,
   cadEvidence,
   cadAnalysis,
   onCADEvidenceLoaded,
 }: {
   result: AnalysisResult;
   onDownload: (kind: 'board' | 'personal') => void;
+  manualComps: ManualComp[];
   cadEvidence: ExtractedCADEvidence | null;
   cadAnalysis: CADAnalysis | null;
   onCADEvidenceLoaded: (evidence: ExtractedCADEvidence) => void;
@@ -643,6 +647,14 @@ function Results({
         </section>
       )}
 
+      {/* Manual comps analysis */}
+      {manualComps.length > 0 && result && (
+        <CompAnalysis
+          comps={manualComps}
+          subjectSqft={result.subject.livingAreaSqft}
+        />
+      )}
+
       {/* CAD evidence upload & analysis */}
       {!cadEvidence && (
         <CADEvidenceUpload
@@ -679,17 +691,27 @@ function Results({
               <p className="font-medium text-slate-700">Settlement Targets</p>
               <div className="mt-2 grid grid-cols-3 gap-3">
                 <div className="rounded bg-white/70 p-2 text-center">
-                  <p className="text-xs text-slate-500">Ask</p>
+                  <p className="text-xs text-slate-500 font-medium">Ask (Your Appraisal Value)</p>
                   <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.ask.toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Opening position</p>
                 </div>
-                <div className="rounded bg-white/70 p-2 text-center">
-                  <p className="text-xs text-slate-500">Target</p>
+                <div className="rounded bg-emerald-100/70 p-2 text-center">
+                  <p className="text-xs text-slate-700 font-medium">Target (Expected Settlement)</p>
                   <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.target.toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-600 mt-1">Most likely outcome</p>
                 </div>
                 <div className="rounded bg-white/70 p-2 text-center">
-                  <p className="text-xs text-slate-500">Floor</p>
+                  <p className="text-xs text-slate-500 font-medium">Floor (Walk-Away Price)</p>
                   <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.floor.toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Don't accept below</p>
                 </div>
+              </div>
+              <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 space-y-1">
+                <p>
+                  <strong>How this works:</strong> ARB negotiates between your "ask" (your strongest
+                  comparable value) and their appraised value. The "target" is typically 60% of the
+                  reduction you're seeking (county-specific). Never accept below "floor."
+                </p>
               </div>
             </div>
             <div>
