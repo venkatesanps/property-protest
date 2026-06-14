@@ -647,26 +647,73 @@ function Results({
       {equity && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="font-semibold text-slate-900">Unequal appraisal (equity) analysis</h3>
-          <div className="mt-5 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat label="Your $/sqft" value={fmtPsf(equity.subjectPsf)} />
-            <Stat label="Median $/sqft" value={fmtPsf(equity.neighborhoodMedianPsf)} />
-            <Stat label="Indicated (refined)" value={fmtUSD(equity.indicatedValueRefined)} accent />
+          <p className="mt-1 text-xs text-slate-600">
+            Hover over the ⓘ icons below to see how each number is calculated. <strong>Key insight:</strong> If "Indicated (refined)" is HIGHER than your current appraisal, your home is appraised fairly (or low). If it's LOWER, you have a strong protest case.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat
+              label="Your $/sqft"
+              value={fmtPsf(equity.subjectPsf)}
+              help="Your property's appraised value ÷ living area. Shows what the appraiser values per square foot."
+            />
+            <Stat
+              label="Median $/sqft"
+              value={fmtPsf(equity.neighborhoodMedianPsf)}
+              help="The middle $/sqft value from comparable properties in your neighborhood. This is what the law requires your appraisal to match."
+            />
+            <Stat
+              label="Indicated (refined)"
+              value={fmtUSD(equity.indicatedValueRefined)}
+              accent
+              help="What your home SHOULD be worth: Living area × Median $/sqft. This is the legal benchmark. Compare to your appraisal to find your gap."
+            />
             {equity.indicatedValueClassMatched != null && (
               <Stat
                 label={`Indicated (class ${subject.qualityClass})`}
                 value={fmtUSD(equity.indicatedValueClassMatched)}
+                help="Same calculation but using only comps with your exact quality class. Focuses on your home's specific category."
               />
             )}
-            <Stat label="Indicated (size adj.)" value={fmtUSD(equity.indicatedValueSizeAdjusted)} />
+            <Stat
+              label="Indicated (size adj.)"
+              value={fmtUSD(equity.indicatedValueSizeAdjusted)}
+              help="Adjusted for differences in living area between your home and the comps. If your comps average 3,200 sqft and you have 3,343, this accounts for that difference."
+            />
             {equity.indicatedValueSplit != null && (
-              <Stat label="Indicated (land + bldg)" value={fmtUSD(equity.indicatedValueSplit)} accent />
+              <Stat
+                label="Indicated (land + bldg)"
+                value={fmtUSD(equity.indicatedValueSplit)}
+                accent
+                help="Land and building values calculated separately, then added together. Shows how much of your appraised value is land vs structure."
+              />
             )}
-            <Stat label="Rank" value={`#${equity.subjectRankOf} of ${equity.neighborhoodCount}`} />
+            <Stat
+              label="Rank"
+              value={`#${equity.subjectRankOf} of ${equity.neighborhoodCount}`}
+              help={`Your rank among all homes in your neighborhood. Rank 1 = highest $/sqft (most over-appraised). You're appraised higher than ${equity.percentileHigher.toFixed(0)}% of comparable homes.`}
+            />
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Rank 1 = highest $/sqft (most over-appraised). You are appraised higher than{' '}
-            {equity.percentileHigher.toFixed(0)}% of comparable homes.
-          </p>
+
+          {/* Interpretation guide */}
+          <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-sm font-semibold text-emerald-900">📊 What does this mean?</p>
+            {(() => {
+              const gap = subject.marketValue - equity.indicatedValueRefined;
+              if (gap > 0) {
+                return (
+                  <p className="mt-2 text-xs text-emerald-800">
+                    <strong>Your appraisal appears LOW by ${fmtUSD(gap).replace('$', '')}.</strong> The neighborhood comps indicate your home should be worth {fmtUSD(equity.indicatedValueRefined)}, but it's appraised at {fmtUSD(subject.marketValue)}. You may not have a strong equity-based protest case — focus on other grounds (CAD data errors, property defects, market conditions).
+                  </p>
+                );
+              } else {
+                return (
+                  <p className="mt-2 text-xs text-emerald-800">
+                    <strong>Your appraisal is HIGH by ${fmtUSD(-gap).replace('$', '')}.</strong> The neighborhood comps indicate your home should be worth {fmtUSD(equity.indicatedValueRefined)}, but it's appraised at {fmtUSD(subject.marketValue)}. You have a strong §41.43(b)(3) unequal appraisal case. Add same-street comps (if available) to strengthen even further.
+                  </p>
+                );
+              }
+            })()}
+          </div>
           {equity.indicatedValueSplit != null &&
             equity.indicatedLandValue != null &&
             equity.indicatedImprovementValue != null && (
@@ -1585,13 +1632,34 @@ function FreeComps({ subject }: { subject: import('./types').SubjectProperty }) 
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({ label, value, accent, help }: { label: string; value: string; accent?: boolean; help?: string }) {
+  const [showHelp, setShowHelp] = useState(false);
+
   return (
     <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="flex items-center gap-1">
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
+        {help && (
+          <button
+            type="button"
+            onMouseEnter={() => setShowHelp(true)}
+            onMouseLeave={() => setShowHelp(false)}
+            onClick={() => setShowHelp(!showHelp)}
+            className="text-slate-300 hover:text-slate-500 text-xs font-bold"
+            title="Click for explanation"
+          >
+            ⓘ
+          </button>
+        )}
+      </div>
       <div className={`mt-1 text-lg font-semibold ${accent ? 'text-emerald-600' : 'text-slate-900'}`}>
         {value}
       </div>
+      {help && showHelp && (
+        <div className="mt-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200 leading-relaxed">
+          {help}
+        </div>
+      )}
     </div>
   );
 }
