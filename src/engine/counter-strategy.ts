@@ -203,7 +203,7 @@ function calculateSettlementTargets(
   // ════════════════════════════════════════════════════════════════════════
   // PRIMARY: User's strongest argument (same-street indicated)
   // ════════════════════════════════════════════════════════════════════════
-  let ask = userEquity?.indicatedValueSameStreet ||
+  const ask = userEquity?.indicatedValueSameStreet ||
             userEquity?.indicatedValueRefined ||
             evidence.marketIndicatedValue ||
             evidence.currentAppraised;
