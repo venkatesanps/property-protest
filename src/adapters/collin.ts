@@ -92,6 +92,16 @@ function toSubject(row: CollinRow): SubjectProperty {
     homesteadCapAmount: null,
     landValue: num(row.currvalland),
     improvementValue: num(row.currvalimprv),
+    // Lot size: Collin gives sqft directly, or acres we convert (43,560 sqft/acre).
+    lotSizeSqft: row.landsizesqft
+      ? Math.round(num(row.landsizesqft))
+      : row.landsizeacres
+        ? Math.round(num(row.landsizeacres) * 43560)
+        : null,
+    // imprvpoolflag is 'Y'/'1'/'T' when a pool is on the improvement record.
+    hasPool: row.imprvpoolflag != null && row.imprvpoolflag !== ''
+      ? /^(y|1|t|true)$/i.test(row.imprvpoolflag.trim())
+      : null,
     priorYearValue: row.prevvalappraised ? num(row.prevvalappraised) : null,
     rollYear: resolvedRoll?.year ?? null,
     rollLabel: `Collin CAD ${resolvedRoll?.label ?? 'appraisal roll'}`,

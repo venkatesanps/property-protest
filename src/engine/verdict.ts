@@ -11,7 +11,7 @@ import type {
   ProtestExtras,
   Verdict,
 } from '../types';
-import { TAX_RATE } from '../constants';
+import { countyTaxRate } from '../constants';
 import { fmtUSD } from '../format';
 
 interface Candidate {
@@ -86,7 +86,7 @@ export function computeVerdict(
 
   if (target < floor - 500) {
     const reduction = floor - target;
-    const tax = reduction * TAX_RATE;
+    const tax = reduction * countyTaxRate(subject.county);
     const repairNote = repair > 0 ? ` (after a ${fmtUSD(repair)} repair/condition deduction)` : '';
     return base(
       'protest',

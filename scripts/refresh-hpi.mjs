@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Fetches the FHFA quarterly all-transactions metro HPI CSV and regenerates
- * the HPI table in src/adapters/hpi.ts for CBSA 19124 (Dallas-Plano-Irving).
+ * Fetches the FHFA quarterly all-transactions metro HPI CSV and regenerates the
+ * per-metro HPI tables in src/adapters/hpi.ts:
+ *   • CBSA 19124 — Dallas-Plano-Irving (Collin/Denton)   -> DALLAS_HPI
+ *   • CBSA 23104 — Fort Worth-Arlington-Grapevine (Tarrant) -> FORT_WORTH_HPI
  *
  * Run manually:  node scripts/refresh-hpi.mjs
  * Also run by:   .github/workflows/refresh-hpi.yml  (scheduled quarterly)
@@ -15,7 +17,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const CBSA         = 19124;   // Dallas-Plano-Irving, TX Metropolitan Statistical Area
+// Each table in hpi.ts is regenerated from one CBSA series.
+const METROS = [
+  { cbsa: 19124, varName: 'DALLAS_HPI' },      // Dallas-Plano-Irving, TX MSAD
+  { cbsa: 23104, varName: 'FORT_WORTH_HPI' },  // Fort Worth-Arlington-Grapevine, TX MSAD
+];
 const CSV_URL      = 'https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.csv';
 const ROOT         = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HPI_FILE     = path.join(ROOT, 'src/adapters/hpi.ts');
@@ -30,14 +36,14 @@ async function fetchCsv() {
   return res.text();
 }
 
-function parse(csv) {
+function parse(csv, cbsaWanted) {
   /** @type {Map<string, number>} */
   const map = new Map();
   for (const line of csv.split('\n')) {
     const m = ROW_RE.exec(line.trim());
     if (!m) continue;
     const [, cbsa, yr, q, nsa] = m;
-    if (Number(cbsa) !== CBSA) continue;
+    if (Number(cbsa) !== cbsaWanted) continue;
     const val = parseFloat(nsa);
     if (!isFinite(val)) continue;
     map.set(`${yr}Q${q}`, val);
@@ -45,7 +51,7 @@ function parse(csv) {
   return map;
 }
 
-function renderHpiBlock(map) {
+function renderHpiBlock(varName, map) {
   const keys = [...map.keys()].sort();
   if (keys.length === 0) throw new Error('Parsed map is empty — check CSV format.');
 
@@ -55,15 +61,14 @@ function renderHpiBlock(map) {
     const chunk = keys.slice(i, i + 4);
     lines.push('  ' + chunk.map(k => `'${k}': ${map.get(k).toFixed(2)}`).join(', ') + ',');
   }
-  return `const HPI: Record<string, number> = {\n${lines.join('\n')}\n};`;
+  return `const ${varName}: Record<string, number> = {\n${lines.join('\n')}\n};`;
 }
 
-function updateFile(hpiBlock) {
+function updateFile(varName, hpiBlock) {
   const src = readFileSync(HPI_FILE, 'utf8');
-  const next = src.replace(
-    /const HPI: Record<string, number> = \{[\s\S]*?\};/,
-    hpiBlock,
-  );
+  const re = new RegExp(`const ${varName}: Record<string, number> = \\{[\\s\\S]*?\\};`);
+  if (!re.test(src)) throw new Error(`Could not find ${varName} table in ${HPI_FILE}`);
+  const next = src.replace(re, hpiBlock);
   if (next === src) return false;   // nothing changed
   writeFileSync(HPI_FILE, next, 'utf8');
   return true;
@@ -71,28 +76,31 @@ function updateFile(hpiBlock) {
 
 async function main() {
   console.log(`Fetching ${CSV_URL} …`);
-  const csv  = await fetchCsv();
-  const map  = parse(csv);
-  const keys = [...map.keys()].sort();
+  const csv = await fetchCsv();
 
-  if (keys.length === 0) {
-    throw new Error(
-      `No valid data found for CBSA ${CBSA}. ` +
-      'Check that the CSV URL and column format are still correct.'
-    );
+  let anyChanged = false;
+  for (const { cbsa, varName } of METROS) {
+    const map  = parse(csv, cbsa);
+    const keys = [...map.keys()].sort();
+    if (keys.length === 0) {
+      throw new Error(
+        `No valid data found for CBSA ${cbsa}. ` +
+        'Check that the CSV URL and column format are still correct.'
+      );
+    }
+    const latest = keys[keys.length - 1];
+    console.log(`CBSA ${cbsa}: ${keys.length} quarters ${keys[0]} → ${latest}  (index ${map.get(latest)})`);
+
+    const changed = updateFile(varName, renderHpiBlock(varName, map));
+    if (changed) {
+      console.log(`✓ Updated ${varName} in ${HPI_FILE}`);
+      anyChanged = true;
+    } else {
+      console.log(`No changes — ${varName} is already up to date.`);
+    }
   }
 
-  const latest = keys[keys.length - 1];
-  console.log(`Parsed ${keys.length} quarters: ${keys[0]} → ${latest}  (index ${map.get(latest)})`);
-
-  const block   = renderHpiBlock(map);
-  const changed = updateFile(block);
-
-  if (changed) {
-    console.log(`✓ Updated ${HPI_FILE}`);
-  } else {
-    console.log('No changes — hpi.ts is already up to date.');
-  }
+  if (!anyChanged) console.log('hpi.ts is already up to date.');
 }
 
 main().catch(err => {

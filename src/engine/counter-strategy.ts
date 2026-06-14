@@ -92,9 +92,10 @@ function findInconsistencies(
   userEquity: EquityResult | null
 ): CADWeakness[] {
   const weaknesses: CADWeakness[] = [];
+  const cad = cadAbbr(evidence.county);
 
   // ══════════════════════════════════════════════════════════════════════════
-  // 1. DCAD'S OWN INCONSISTENCY: Indicated vs Appraised (their comps vs their value)
+  // 1. CAD'S OWN INCONSISTENCY: Indicated vs Appraised (their comps vs their value)
   // ══════════════════════════════════════════════════════════════════════════
   if (evidence.equityIndicatedValue && evidence.equityIndicatedValue > evidence.currentAppraised) {
     const gap = evidence.equityIndicatedValue - evidence.currentAppraised;
@@ -103,7 +104,7 @@ function findInconsistencies(
     weaknesses.push({
       type: 'indicated-vs-appraised',
       severity: 'major',
-      description: `DCAD's own equity comps indicated $${evidence.equityIndicatedValue.toLocaleString()} ($${(evidence.equityIndicatedValue / (evidence.currentAppraised / 0.01)).toFixed(0)}/sqft estimated), but they appraised you at $${evidence.currentAppraised.toLocaleString()}. Their own methodology says you should be worth $${gap.toLocaleString()} MORE. This proves they have discretion and room to move.`,
+      description: `${cad}'s own equity comps indicated $${evidence.equityIndicatedValue.toLocaleString()}, but they appraised you at $${evidence.currentAppraised.toLocaleString()}. Their own methodology says you should be worth $${gap.toLocaleString()} MORE. This proves they have discretion and room to move.`,
       dollarImpact: gap,
       counterEvidence: `Their equity comps support a HIGHER value, yet they appraised you lower. This inconsistency is your leverage. Ask: "If your comps indicated $${evidence.equityIndicatedValue.toLocaleString()}, why did you stop at $${evidence.currentAppraised.toLocaleString()}? That's $${gap.toLocaleString()} of discrepancy you can't explain."`,
     });
@@ -119,13 +120,19 @@ function findInconsistencies(
     if (!dcadHasSameStreet && evidence.equityComps.length > 0) {
       const userSameStreetValue = userEquity.indicatedValueSameStreet || evidence.currentAppraised;
       const gap = evidence.currentAppraised - userSameStreetValue;
+      const descriptors = compDescriptors(userEquity.sameStreetComps);
+      const cls = commonQualityClass(userEquity.sameStreetComps);
+      const classClause = cls ? `, all ${cls} class` : '';
+      const cadComps = evidence.equityComps[0]?.address
+        ? `${cad} used comps from DIFFERENT streets (e.g. ${evidence.equityComps[0].address}).`
+        : `${cad} used comps from DIFFERENT streets.`;
 
       weaknesses.push({
         type: 'same-street-omission',
         severity: 'major',
-        description: `You have ${userEquity.sameStreetComps.length} comparable homes on your same street (${userStreet.toUpperCase()}). All are the same VB2 class, built 2015-2016, identical $${userEquity.sameStreetComps[0]?.landValue.toLocaleString() || '183k'} land values. DCAD used comps from DIFFERENT streets (${evidence.equityComps[0]?.address || 'Rolling Thunder Rd'} area, 0.06-0.16 miles away). Same street = most directly comparable under §41.43(b)(3).`,
+        description: `You have ${userEquity.sameStreetComps.length} comparable homes on your same street (${userStreet.toUpperCase()})${descriptors}. ${cadComps} Same street = most directly comparable under §41.43(b)(3).`,
         dollarImpact: gap,
-        counterEvidence: `"Your Honor, the statute requires 'reasonable comparable properties.' Same-street properties are the definition of reasonable. I have ${userEquity.sameStreetComps.length} homes on my street, all VB2 class, all built within 1 year. They support an indicated value of $${userSameStreetValue.toLocaleString()}, which is $${gap.toLocaleString()} lower than the current appraisal."`,
+        counterEvidence: `"Your Honor, the statute requires 'reasonable comparable properties.' Same-street properties are the definition of reasonable. I have ${userEquity.sameStreetComps.length} homes on my street${classClause}. They support an indicated value of $${userSameStreetValue.toLocaleString()}, which is $${gap.toLocaleString()} lower than the current appraisal."`,
       });
     }
   }
@@ -158,7 +165,7 @@ function findInconsistencies(
       weaknesses.push({
         type: 'comp-selection-bias',
         severity: 'major',
-        description: `DCAD's equity comps average $${dcadAvgValue.toLocaleString()} ($${(dcadAvgValue / (evidence.currentAppraised / 0.01)).toFixed(0)}/sqft). Your same-street comps average $${userAvgValue.toLocaleString()} ($${(userAvgValue / (evidence.currentAppraised / 0.01)).toFixed(0)}/sqft). DCAD selected higher-valued comps, which justifies a higher appraisal. This is comp selection bias.`,
+        description: `${cad}'s equity comps average $${Math.round(dcadAvgValue).toLocaleString()}. Your same-street comps average $${Math.round(userAvgValue).toLocaleString()}. ${cad} selected higher-valued comps, which justifies a higher appraisal. This is comp selection bias.`,
         dollarImpact: gap,
         counterEvidence: `"You selected comps that were worth more than homes on my street. That's cherry-picking to support a higher value. My street's homes are more comparable and worth less. Use those."`,
       });
@@ -169,10 +176,17 @@ function findInconsistencies(
   // 5. SIZE OUTLIERS: DCAD's comps differ by >30% sqft
   // ══════════════════════════════════════════════════════════════════════════
   if (evidence.equityComps.length > 0 && evidence.currentAppraised > 0) {
+    // Use the median same-street comp size as the subject-size proxy when we have
+    // it; otherwise fall back to a typical suburban size.
+    const sameStreetSqft = (userEquity?.sameStreetComps ?? [])
+      .map((c) => c.livingAreaSqft)
+      .filter((s) => s > 0)
+      .sort((a, b) => a - b);
+    const estimatedSubjSqft = sameStreetSqft.length
+      ? sameStreetSqft[Math.floor(sameStreetSqft.length / 2)]
+      : 3300;
     const outlierComps = evidence.equityComps.filter((c) => {
       if (!c.livingAreaSqft) return false;
-      // Estimate subject sqft from appraised value (rough)
-      const estimatedSubjSqft = 3300; // typical suburban home
       const diff = Math.abs(c.livingAreaSqft - estimatedSubjSqft) / estimatedSubjSqft;
       return diff > 0.3;
     });
@@ -181,7 +195,7 @@ function findInconsistencies(
       weaknesses.push({
         type: 'comp-selection-bias',
         severity: 'moderate',
-        description: `${outlierComps.length} of DCAD's ${evidence.equityComps.length} comps differ by >30% in size. DCAD should limit comps to ±20% of subject size. This shows loose selection criteria.`,
+        description: `${outlierComps.length} of ${cad}'s ${evidence.equityComps.length} comps differ by >30% in size. ${cad} should limit comps to ±20% of subject size. This shows loose selection criteria.`,
         dollarImpact: 0,
         counterEvidence: `"The appraisal profession limits comps to ±20% size difference to ensure apples-to-apples comparison. You included comps that are 30-40% different. That's outside industry standards."`,
       });
@@ -242,6 +256,9 @@ function buildObjectionResponses(
 
   const userStreet = extractStreetName(evidence.subjectAddress).toUpperCase();
   const sameStreetCount = userEquity?.sameStreetComps.length || 0;
+  const cls = commonQualityClass(userEquity?.sameStreetComps ?? []);
+  const yrs = yearRangeLabel(userEquity?.sameStreetComps ?? []);
+  const classClause = cls ? `, all ${cls} class` : '';
 
   // ════════════════════════════════════════════════════════════════════════
   // OBJECTION 1: "Our methodology is sound"
@@ -257,7 +274,7 @@ function buildObjectionResponses(
   if (sameStreetCount >= 3) {
     responses.push({
       objection: `We used appropriate comparables from across the market area. Different streets are acceptable for appraisal comps.`,
-      yourResponse: `For market analysis, yes. But for §41.43(b)(3) unequal appraisal, the statute contemplates using the MOST directly comparable properties. I have ${sameStreetCount} homes on ${userStreet}, all VB2 class, all built 2015-2016, with identical land values. Same street is the most reasonable comparison. You didn't use any of them.`,
+      yourResponse: `For market analysis, yes. But for §41.43(b)(3) unequal appraisal, the statute contemplates using the MOST directly comparable properties. I have ${sameStreetCount} homes on ${userStreet}${classClause}${yrs ? `, built ${yrs}` : ''}. Same street is the most reasonable comparison. You didn't use any of them.`,
     });
   }
 
@@ -267,7 +284,7 @@ function buildObjectionResponses(
   if (sameStreetCount >= 3) {
     responses.push({
       objection: `We focused on the broader neighborhood to capture market trends, not just street-level anomalies.`,
-      yourResponse: `"Anomalies" are actually a more directly comparable set. All ${sameStreetCount} homes on my street are within 1 year old, same quality class, and same improvements. That's not anomalous—that's the BEST comparison set. The statute says 'reasonable comparable properties.' Same-street is the most reasonable definition.`,
+      yourResponse: `"Anomalies" are actually a more directly comparable set. All ${sameStreetCount} homes on my street are ${cls ? `${cls} class` : 'the same quality class'}${yrs ? `, built ${yrs}` : ''}. That's not anomalous—that's the BEST comparison set. The statute says 'reasonable comparable properties.' Same-street is the most reasonable definition.`,
     });
   }
 
@@ -330,7 +347,11 @@ function buildPrimaryArgument(
   if (sameStreetWeakness && userEquity?.sameStreetComps.length) {
     const street = extractStreetName(evidence.subjectAddress).toUpperCase();
     const medianPsf = (userEquity.sameStreetMedianPsf || 0).toFixed(2);
-    return `I am requesting a reduction to $${userEquity.indicatedValueSameStreet?.toLocaleString() || evidence.currentAppraised.toLocaleString()} based on unequal appraisal. I have ${userEquity.sameStreetComps.length} comparable homes on ${street}, all VB2 class, all built 2015-2016, identical land values. They are appraised at a median of $${medianPsf}/sqft. I am appraised at $${(evidence.currentAppraised / (evidence.currentAppraised / 0.01)).toFixed(2)}/sqft—a ${((evidence.currentAppraised / (userEquity.indicatedValueSameStreet || evidence.currentAppraised)) - 1) * 100 > 0 ? '+' : ''}${(((evidence.currentAppraised / (userEquity.indicatedValueSameStreet || evidence.currentAppraised)) - 1) * 100).toFixed(1)}% premium over same-street homes. Under §41.43(b)(3), same-street comparables are the most directly comparable and support a lower value.`;
+    const subjPsf = userEquity.subjectPsf.toFixed(2);
+    const descriptors = compDescriptors(userEquity.sameStreetComps);
+    const indicated = userEquity.indicatedValueSameStreet || evidence.currentAppraised;
+    const premiumPct = (evidence.currentAppraised / indicated - 1) * 100;
+    return `I am requesting a reduction to $${indicated.toLocaleString()} based on unequal appraisal. I have ${userEquity.sameStreetComps.length} comparable homes on ${street}${descriptors}. They are appraised at a median of $${medianPsf}/sqft. I am appraised at $${subjPsf}/sqft—a ${premiumPct > 0 ? '+' : ''}${premiumPct.toFixed(1)}% premium over same-street homes. Under §41.43(b)(3), same-street comparables are the most directly comparable and support a lower value.`;
   }
 
   if (indicatedWeakness && evidence.equityIndicatedValue && evidence.equityIndicatedValue > evidence.currentAppraised) {
@@ -352,6 +373,59 @@ function extractStreetName(addr: string): string {
   // "1069 Angel Falls Dr, Frisco TX 75036" -> "angel falls dr"
   const parts = addr.split(',')[0].trim().split(/\s+/);
   return parts.slice(1).join(' ').toLowerCase();
+}
+
+/** Short appraisal-district abbreviation for talking points. */
+function cadAbbr(county: County): string {
+  switch (county) {
+    case 'collin':
+      return 'CCAD';
+    case 'denton':
+      return 'DCAD';
+    case 'tarrant':
+      return 'TAD';
+    default:
+      return 'the CAD';
+  }
+}
+
+/** Most common quality class among comps (e.g. "VB2"); '' when none carry it. */
+function commonQualityClass(comps: { qualityClass: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const c of comps) {
+    const cls = c.qualityClass?.trim();
+    if (cls) counts.set(cls, (counts.get(cls) ?? 0) + 1);
+  }
+  let best = '';
+  let bestN = 0;
+  for (const [cls, n] of counts) {
+    if (n > bestN) {
+      best = cls;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** Year-built range across comps, e.g. "2015-2016" or "2015"; '' when unknown. */
+function yearRangeLabel(comps: { yearBuilt: number }[]): string {
+  const years = comps.map((c) => c.yearBuilt).filter((y) => y > 0).sort((a, b) => a - b);
+  if (years.length === 0) return '';
+  const lo = years[0];
+  const hi = years[years.length - 1];
+  return lo === hi ? String(lo) : `${lo}-${hi}`;
+}
+
+/** "all VB2 class, built 2015-2016" — only the clauses we can actually support. */
+function compDescriptors(comps: { qualityClass: string; yearBuilt: number; landValue: number }[]): string {
+  const cls = commonQualityClass(comps);
+  const yrs = yearRangeLabel(comps);
+  const land = comps.find((c) => c.landValue > 0)?.landValue;
+  const clauses: string[] = [];
+  if (cls) clauses.push(`all ${cls} class`);
+  if (yrs) clauses.push(`built ${yrs}`);
+  if (land) clauses.push(`with comparable land values around $${land.toLocaleString()}`);
+  return clauses.length ? ', ' + clauses.join(', ') : '';
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────────
