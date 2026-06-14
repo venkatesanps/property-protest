@@ -38,17 +38,34 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
     (c) => extractStreet(c.address).toUpperCase() === subjectStreet.toUpperCase()
   );
 
-  // Filter same-street comps by refinement criteria (size ±20%, year ±12).
-  // These are the "best" comparable properties on the same street.
-  const refinedSameStreet = sameStreet.filter((c) =>
-    Math.abs(c.livingAreaSqft - subject.livingAreaSqft) <= 0.2 * subject.livingAreaSqft &&
-    Math.abs((c.yearBuilt || 0) - subject.yearBuilt) <= 12
+  // ── Best same-street comps: §41.43(b)(3) calls for "a reasonable number of
+  // comparable properties," not every house on the block. Rank all same-street
+  // homes by physical similarity to the subject (size, age, quality class) and
+  // keep only the closest few. Selecting the most-similar handful is far more
+  // defensible than a median over 24 mixed properties.
+  const BEST_SAME_STREET_COUNT = 3;
+  const similarityDistance = (c: Comp): number => {
+    const sizeDiff = Math.abs(c.livingAreaSqft - subject.livingAreaSqft) / subject.livingAreaSqft;
+    const ageDiff = Math.abs((c.yearBuilt || subject.yearBuilt) - subject.yearBuilt) / 10;
+    const classPenalty =
+      subject.qualityClass.trim() !== '' && c.qualityClass.trim() !== subject.qualityClass.trim()
+        ? 0.5
+        : 0;
+    return sizeDiff + ageDiff + classPenalty;
+  };
+  const sameStreetRanked = [...sameStreet].sort(
+    (a, b) => similarityDistance(a) - similarityDistance(b)
   );
+  // Keep the closest N; if there are N or fewer on the street, keep them all.
+  const refinedSameStreet =
+    sameStreet.length > BEST_SAME_STREET_COUNT
+      ? sameStreetRanked.slice(0, BEST_SAME_STREET_COUNT)
+      : sameStreet;
 
   const hasSameStreet = sameStreet.length >= 3;
   const hasRefinedSameStreet = refinedSameStreet.length >= 3;
 
-  // Use refined same-street comps if available; otherwise fall back to all same-street.
+  // Use the best same-street comps when we have at least 3; otherwise fall back.
   const sameStreetToUse = hasRefinedSameStreet ? refinedSameStreet : sameStreet;
   const sameStreetMedianPsf = hasSameStreet ? median(sameStreetToUse.map((c) => c.pricePerSqft)) : null;
   const indicatedValueSameStreet = sameStreetMedianPsf
