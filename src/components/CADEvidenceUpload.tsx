@@ -8,6 +8,7 @@ export function CADEvidenceUpload({
   onEvidenceLoaded: (evidence: ExtractedCADEvidence) => void;
 }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<ExtractedCADEvidence | null>(null);
 
@@ -18,15 +19,21 @@ export function CADEvidenceUpload({
     }
 
     setIsLoading(true);
+    setProgress('Loading PDF...');
     setError(null);
 
     try {
+      setProgress('Extracting text from pages...');
       const evidence = await parseCADEvidencePDF(file);
+
+      setProgress('Analyzing evidence...');
       setExtracted(evidence);
       onEvidenceLoaded(evidence);
+      setProgress('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to parse PDF';
       setError(msg);
+      setProgress('');
     } finally {
       setIsLoading(false);
     }
@@ -104,13 +111,18 @@ export function CADEvidenceUpload({
       <div className="mt-4 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center">
         <label className="cursor-pointer">
           <div className="space-y-2">
-            <div className="text-2xl text-slate-400">📄</div>
+            <div className="text-2xl text-slate-400">{isLoading ? '⏳' : '📄'}</div>
             <p className="font-medium text-slate-700">
-              {isLoading ? 'Parsing PDF...' : 'Choose a PDF file'}
+              {isLoading ? (progress || 'Processing PDF...') : 'Choose a PDF file'}
             </p>
+            {isLoading && (
+              <div className="mt-2 h-1 w-32 mx-auto overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full w-full animate-pulse bg-emerald-500"></div>
+              </div>
+            )}
             <p className="text-xs text-slate-500">
               {isLoading
-                ? 'This may take a few seconds for larger documents'
+                ? progress || 'Please wait...'
                 : 'Supported: Denton, Collin, Tarrant Counties'}
             </p>
           </div>

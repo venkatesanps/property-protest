@@ -40,96 +40,36 @@ async function extractPdfText(file: File): Promise<ParsedPdf> {
   let imageCount = 0;
   const tables: ParsedTable[] = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
+  // Only parse first 4 pages (CAD evidence packets are typically 2-3 pages of data)
+  const pagesToParse = Math.min(4, pdf.numPages);
+
+  for (let i = 1; i <= pagesToParse; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
 
-    // Extract text (line by line)
-    let currentLine = '';
-    let lastY = -1;
+    // Extract text more efficiently
+    let pageText = textContent.items
+      .map((item) => ('str' in item ? (item as any).str : ''))
+      .join(' ');
 
-    for (const item of textContent.items) {
-      if ('str' in item && 'transform' in item) {
-        const textItem = item as any;
-        const str = textItem.str as string;
-        const y = textItem.transform?.[5] ?? 0;
-        // Detect line breaks
-        if (lastY !== -1 && Math.abs(y - lastY) > 5) {
-          if (currentLine.trim()) fullText += currentLine + '\n';
-          currentLine = '';
-        }
-        currentLine += str + ' ';
-        lastY = y;
-      }
+    // Clean up extra spaces
+    pageText = pageText.replace(/\s+/g, ' ').trim();
+    fullText += pageText + '\n';
+
+    // Early exit if we found key sections
+    if (
+      fullText.includes('EQUITY ANALYSIS') &&
+      fullText.includes('COMPARABLE SALES') &&
+      fullText.includes('Market Value')
+    ) {
+      // We have enough data, parse remaining pages only if needed
+      if (i >= 2) break;
     }
-    if (currentLine.trim()) fullText += currentLine + '\n';
-
-    // Try to extract tables from this page (basic heuristic)
-    // Look for rows with multiple values separated by significant gaps
-    const pageText = fullText.split('\n').slice(-50); // Last 50 lines of this page
-    const possibleTables = detectTableStructure(pageText);
-    tables.push(...possibleTables);
   }
 
   return { fullText, tables, images: imageCount };
 }
 
-// ─── Table Detection (Heuristic) ───────────────────────────────────────────────
-
-function detectTableStructure(lines: string[]): ParsedTable[] {
-  const tables: ParsedTable[] = [];
-  let currentTable: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Lines with multiple numbers/dollars likely part of a table
-    if (trimmed && (trimmed.match(/\d/g) || trimmed.match(/\$/g))) {
-      currentTable.push(trimmed);
-    } else if (currentTable.length > 0) {
-      // End of table
-      const table = parseTableLines(currentTable);
-      if (table.rows.length >= 2) tables.push(table);
-      currentTable = [];
-    }
-  }
-
-  if (currentTable.length > 0) {
-    const table = parseTableLines(currentTable);
-    if (table.rows.length >= 2) tables.push(table);
-  }
-
-  return tables;
-}
-
-function parseTableLines(lines: string[]): ParsedTable {
-  if (lines.length < 2) return { headers: [], rows: [] };
-
-  // First line is usually headers
-  const headerLine = lines[0];
-  const headers = headerLine
-    .split(/\s{2,}/) // Split on 2+ spaces
-    .map((h) => h.trim())
-    .filter((h) => h.length > 0);
-
-  const rows: Record<string, string>[] = [];
-
-  // Parse data rows
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    const cells = line.split(/\s{2,}/).map((c) => c.trim());
-
-    if (cells.length >= headers.length / 2) {
-      // At least half the headers have data
-      const row: Record<string, string> = {};
-      headers.forEach((header, idx) => {
-        row[header] = cells[idx] || '';
-      });
-      rows.push(row);
-    }
-  }
-
-  return { headers, rows };
-}
 
 // ─── CAD-Specific Parsing ──────────────────────────────────────────────────────
 
