@@ -10,6 +10,12 @@ permissions:
   pages: write
   id-token: write
 
+# The GitHub Pages actions (configure-pages, deploy-pages, upload-pages-artifact)
+# have no Node 24 release yet. Force their JS runtime to Node 24 — the default
+# GitHub itself switches to on 2026-06-16 — to clear the deprecation warning.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 concurrency:
   group: pages
   cancel-in-progress: true
