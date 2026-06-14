@@ -648,24 +648,47 @@ function Results({
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="font-semibold text-slate-900">Unequal appraisal (equity) analysis</h3>
           <p className="mt-1 text-xs text-slate-600">
-            Hover over the ⓘ icons below to see how each number is calculated. <strong>Key insight:</strong> If "Indicated (refined)" is HIGHER than your current appraisal, your home is appraised fairly (or low). If it's LOWER, you have a strong protest case.
+            Hover over the ⓘ icons below to see how each number is calculated. <strong>Key insight:</strong> If "Indicated value" is HIGHER than your current appraisal, your home is appraised fairly (or low). If it's LOWER, you have a strong protest case.
           </p>
+          {equity.sameStreetComps && equity.sameStreetComps.length >= 3 && (
+            <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3">
+              <p className="text-xs font-semibold text-emerald-900">
+                ✓ Found {equity.sameStreetComps.length} same-street comps — using these as PRIMARY basis (§41.43(b)(3))
+              </p>
+            </div>
+          )}
           <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
             <Stat
               label="Your $/sqft"
               value={fmtPsf(equity.subjectPsf)}
               help="Your property's appraised value ÷ living area. Shows what the appraiser values per square foot."
             />
+            {equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? (
+              <Stat
+                label="Same-street median $/sqft"
+                value={fmtPsf(equity.sameStreetMedianPsf ?? equity.neighborhoodMedianPsf)}
+                help="The middle $/sqft from homes ON YOUR STREET. Legally the most comparable under §41.43(b)(3). This is the strongest basis for your appraisal value."
+              />
+            ) : (
+              <Stat
+                label="Neighborhood median $/sqft"
+                value={fmtPsf(equity.neighborhoodMedianPsf)}
+                help="The middle $/sqft value from comparable properties in your neighborhood. This is what the law requires your appraisal to match."
+              />
+            )}
             <Stat
-              label="Median $/sqft"
-              value={fmtPsf(equity.neighborhoodMedianPsf)}
-              help="The middle $/sqft value from comparable properties in your neighborhood. This is what the law requires your appraisal to match."
-            />
-            <Stat
-              label="Indicated (refined)"
-              value={fmtUSD(equity.indicatedValueRefined)}
+              label={equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? "Indicated (same-street)" : "Indicated (refined)"}
+              value={fmtUSD(
+                equity.sameStreetComps && equity.sameStreetComps.length >= 3
+                  ? equity.indicatedValueSameStreet ?? equity.indicatedValueRefined
+                  : equity.indicatedValueRefined
+              )}
               accent
-              help="What your home SHOULD be worth: Living area × Median $/sqft. This is the legal benchmark. Compare to your appraisal to find your gap."
+              help={
+                equity.sameStreetComps && equity.sameStreetComps.length >= 3
+                  ? "What your home SHOULD be worth based on same-street appraised values. This is the strongest legal argument under §41.43(b)(3)."
+                  : "What your home SHOULD be worth: Living area × Median $/sqft. This is the legal benchmark. Compare to your appraisal to find your gap."
+              }
             />
             {equity.indicatedValueClassMatched != null && (
               <Stat
@@ -698,17 +721,23 @@ function Results({
           <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-sm font-semibold text-emerald-900">📊 What does this mean?</p>
             {(() => {
-              const gap = subject.marketValue - equity.indicatedValueRefined;
+              const indicatedValue = equity.sameStreetComps && equity.sameStreetComps.length >= 3
+                ? equity.indicatedValueSameStreet ?? equity.indicatedValueRefined
+                : equity.indicatedValueRefined;
+              const compSource = equity.sameStreetComps && equity.sameStreetComps.length >= 3
+                ? `same-street comps (${equity.sameStreetComps.length} homes)`
+                : "neighborhood comps";
+              const gap = subject.marketValue - indicatedValue;
               if (gap > 0) {
                 return (
                   <p className="mt-2 text-xs text-emerald-800">
-                    <strong>Your appraisal appears LOW by ${fmtUSD(gap).replace('$', '')}.</strong> The neighborhood comps indicate your home should be worth {fmtUSD(equity.indicatedValueRefined)}, but it's appraised at {fmtUSD(subject.marketValue)}. You may not have a strong equity-based protest case — focus on other grounds (CAD data errors, property defects, market conditions).
+                    <strong>Your appraisal appears LOW by ${fmtUSD(gap).replace('$', '')}.</strong> The {compSource} indicate your home should be worth {fmtUSD(indicatedValue)}, but it's appraised at {fmtUSD(subject.marketValue)}. You may not have a strong equity-based protest case — focus on other grounds (CAD data errors, property defects, market conditions).
                   </p>
                 );
               } else {
                 return (
                   <p className="mt-2 text-xs text-emerald-800">
-                    <strong>Your appraisal is HIGH by ${fmtUSD(-gap).replace('$', '')}.</strong> The neighborhood comps indicate your home should be worth {fmtUSD(equity.indicatedValueRefined)}, but it's appraised at {fmtUSD(subject.marketValue)}. You have a strong §41.43(b)(3) unequal appraisal case. Add same-street comps (if available) to strengthen even further.
+                    <strong>Your appraisal is HIGH by ${fmtUSD(-gap).replace('$', '')}.</strong> The {compSource} indicate your home should be worth {fmtUSD(indicatedValue)}, but it's appraised at {fmtUSD(subject.marketValue)}. You have a strong §41.43(b)(3) unequal appraisal case{equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? " — same-street comps are the strongest evidence." : ". Add same-street comps (if available) to strengthen even further."}
                   </p>
                 );
               }
@@ -724,8 +753,31 @@ function Results({
                 {fmtUSD(equity.indicatedValueSplit)}.
               </p>
             )}
+
+          {/* Same-street vs Neighborhood comparison */}
+          {equity.sameStreetComps && equity.sameStreetComps.length >= 3 && (
+            <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <p className="text-sm font-semibold text-blue-900">🏘️ Same-Street vs Neighborhood Comparison</p>
+              <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p className="font-semibold text-blue-900">Your Street ({equity.sameStreetComps.length} homes)</p>
+                  <p className="text-blue-700 mt-1">Median $/sqft: {fmtPsf(equity.sameStreetMedianPsf ?? 0)}</p>
+                  <p className="text-blue-700">Indicated value: {fmtUSD(equity.indicatedValueSameStreet ?? 0)}</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-700">Full Neighborhood ({equity.neighborhoodCount} homes)</p>
+                  <p className="text-slate-600 mt-1">Median $/sqft: {fmtPsf(equity.neighborhoodMedianPsf)}</p>
+                  <p className="text-slate-600">Indicated value: {fmtUSD(equity.indicatedValueRefined)}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-blue-800 leading-relaxed">
+                <strong>Why same-street is stronger:</strong> §41.43(b)(3) requires "most comparable properties" — same street is automatically most comparable. These {equity.sameStreetComps.length} homes have identical location, school district, and typically similar condition. Neighborhood data includes properties up to 0.4 miles away, which may have different characteristics.
+              </p>
+            </div>
+          )}
+
           <CompTable
-            comps={equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps}
+            comps={equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? equity.sameStreetComps : equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps}
             subjectPsf={equity.subjectPsf}
           />
         </section>
