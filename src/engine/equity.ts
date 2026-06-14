@@ -43,7 +43,7 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
   // homes by physical similarity to the subject (size, age, quality class) and
   // keep only the closest few. Selecting the most-similar handful is far more
   // defensible than a median over 24 mixed properties.
-  const BEST_SAME_STREET_COUNT = 3;
+  const BEST_SAME_STREET_COUNT = 5;
   const similarityDistance = (c: Comp): number => {
     const sizeDiff = Math.abs(c.livingAreaSqft - subject.livingAreaSqft) / subject.livingAreaSqft;
     const ageDiff = Math.abs((c.yearBuilt || subject.yearBuilt) - subject.yearBuilt) / 10;
