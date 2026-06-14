@@ -37,8 +37,20 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
   const sameStreet = valid.filter(
     (c) => extractStreet(c.address).toUpperCase() === subjectStreet.toUpperCase()
   );
+
+  // Filter same-street comps by refinement criteria (size ±20%, year ±12).
+  // These are the "best" comparable properties on the same street.
+  const refinedSameStreet = sameStreet.filter((c) =>
+    Math.abs(c.livingAreaSqft - subject.livingAreaSqft) <= 0.2 * subject.livingAreaSqft &&
+    Math.abs((c.yearBuilt || 0) - subject.yearBuilt) <= 12
+  );
+
   const hasSameStreet = sameStreet.length >= 3;
-  const sameStreetMedianPsf = hasSameStreet ? median(sameStreet.map((c) => c.pricePerSqft)) : null;
+  const hasRefinedSameStreet = refinedSameStreet.length >= 3;
+
+  // Use refined same-street comps if available; otherwise fall back to all same-street.
+  const sameStreetToUse = hasRefinedSameStreet ? refinedSameStreet : sameStreet;
+  const sameStreetMedianPsf = hasSameStreet ? median(sameStreetToUse.map((c) => c.pricePerSqft)) : null;
   const indicatedValueSameStreet = sameStreetMedianPsf
     ? sameStreetMedianPsf * subject.livingAreaSqft
     : null;
@@ -120,6 +132,7 @@ export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityRe
     indicatedLandValue,
     indicatedValueSplit,
     sameStreetComps: [...sameStreet].sort((a, b) => a.pricePerSqft - b.pricePerSqft),
+    refinedSameStreetComps: [...refinedSameStreet].sort((a, b) => a.pricePerSqft - b.pricePerSqft),
     sameStreetMedianPsf,
     indicatedValueSameStreet,
   };

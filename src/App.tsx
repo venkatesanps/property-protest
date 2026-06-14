@@ -653,7 +653,10 @@ function Results({
           {equity.sameStreetComps && equity.sameStreetComps.length >= 3 && (
             <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3">
               <p className="text-xs font-semibold text-emerald-900">
-                ✓ Found {equity.sameStreetComps.length} same-street comps — using these as PRIMARY basis (§41.43(b)(3))
+                ✓ Found {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
+                  ? `${equity.refinedSameStreetComps.length} best-match same-street comps (of ${equity.sameStreetComps.length} on same street)`
+                  : `${equity.sameStreetComps.length} same-street comps`
+                } — using as PRIMARY basis (§41.43(b)(3))
               </p>
             </div>
           )}
@@ -665,9 +668,11 @@ function Results({
             />
             {equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? (
               <Stat
-                label="Same-street median $/sqft"
+                label={equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3 ? "Best same-street $/sqft" : "Same-street median $/sqft"}
                 value={fmtPsf(equity.sameStreetMedianPsf ?? equity.neighborhoodMedianPsf)}
-                help="The middle $/sqft from homes ON YOUR STREET. Legally the most comparable under §41.43(b)(3). This is the strongest basis for your appraisal value."
+                help={equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
+                  ? "The middle $/sqft from your best-match homes ON YOUR STREET (similar size & age). Legally the most comparable under §41.43(b)(3)."
+                  : "The middle $/sqft from homes ON YOUR STREET. Legally the most comparable under §41.43(b)(3). This is the strongest basis for your appraisal value."}
               />
             ) : (
               <Stat
@@ -721,11 +726,12 @@ function Results({
           <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-sm font-semibold text-emerald-900">📊 What does this mean?</p>
             {(() => {
-              const indicatedValue = equity.sameStreetComps && equity.sameStreetComps.length >= 3
+              const hasSameStreet = equity.sameStreetComps && equity.sameStreetComps.length >= 3;
+              const indicatedValue = hasSameStreet
                 ? equity.indicatedValueSameStreet ?? equity.indicatedValueRefined
                 : equity.indicatedValueRefined;
-              const compSource = equity.sameStreetComps && equity.sameStreetComps.length >= 3
-                ? `same-street comps (${equity.sameStreetComps.length} homes)`
+              const compSource = hasSameStreet
+                ? `same-street comps (${equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3 ? equity.refinedSameStreetComps.length : equity.sameStreetComps.length} homes)`
                 : "neighborhood comps";
               const gap = subject.marketValue - indicatedValue;
               if (gap > 0) {
@@ -737,7 +743,7 @@ function Results({
               } else {
                 return (
                   <p className="mt-2 text-xs text-emerald-800">
-                    <strong>Your appraisal is HIGH by ${fmtUSD(-gap).replace('$', '')}.</strong> The {compSource} indicate your home should be worth {fmtUSD(indicatedValue)}, but it's appraised at {fmtUSD(subject.marketValue)}. You have a strong §41.43(b)(3) unequal appraisal case{equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? " — same-street comps are the strongest evidence." : ". Add same-street comps (if available) to strengthen even further."}
+                    <strong>Your appraisal is HIGH by ${fmtUSD(-gap).replace('$', '')}.</strong> The {compSource} indicate your home should be worth {fmtUSD(indicatedValue)}, but it's appraised at {fmtUSD(subject.marketValue)}. You have a strong §41.43(b)(3) unequal appraisal case{hasSameStreet ? " — same-street comps are the strongest evidence." : ". Add same-street comps (if available) to strengthen even further."}
                   </p>
                 );
               }
@@ -760,9 +766,16 @@ function Results({
               <p className="text-sm font-semibold text-blue-900">🏘️ Same-Street vs Neighborhood Comparison</p>
               <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                 <div>
-                  <p className="font-semibold text-blue-900">Your Street ({equity.sameStreetComps.length} homes)</p>
+                  <p className="font-semibold text-blue-900">
+                    {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
+                      ? `Best Match on Your Street (${equity.refinedSameStreetComps.length})`
+                      : `Your Street (${equity.sameStreetComps.length} homes)`}
+                  </p>
                   <p className="text-blue-700 mt-1">Median $/sqft: {fmtPsf(equity.sameStreetMedianPsf ?? 0)}</p>
                   <p className="text-blue-700">Indicated value: {fmtUSD(equity.indicatedValueSameStreet ?? 0)}</p>
+                  {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3 && (
+                    <p className="text-blue-600 text-xs mt-1">(Similar size ±20%, age ±12 yrs)</p>
+                  )}
                 </div>
                 <div>
                   <p className="font-semibold text-slate-700">Full Neighborhood ({equity.neighborhoodCount} homes)</p>
@@ -771,13 +784,24 @@ function Results({
                 </div>
               </div>
               <p className="mt-3 text-xs text-blue-800 leading-relaxed">
-                <strong>Why same-street is stronger:</strong> §41.43(b)(3) requires "most comparable properties" — same street is automatically most comparable. These {equity.sameStreetComps.length} homes have identical location, school district, and typically similar condition. Neighborhood data includes properties up to 0.4 miles away, which may have different characteristics.
+                <strong>Why same-street is stronger:</strong> §41.43(b)(3) requires "most comparable properties" — same street is automatically most comparable.
+                {equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
+                  ? ` We auto-filtered to ${equity.refinedSameStreetComps.length} best matches (similar size & age) out of ${equity.sameStreetComps.length} on your street.`
+                  : ` These ${equity.sameStreetComps.length} homes have identical location, school district, and typically similar condition.`} Neighborhood data includes properties up to 0.4 miles away, which may have different characteristics.
               </p>
             </div>
           )}
 
           <CompTable
-            comps={equity.sameStreetComps && equity.sameStreetComps.length >= 3 ? equity.sameStreetComps : equity.refinedComps.length >= 3 ? equity.refinedComps : equity.comps}
+            comps={
+              equity.refinedSameStreetComps && equity.refinedSameStreetComps.length >= 3
+                ? equity.refinedSameStreetComps
+                : equity.sameStreetComps && equity.sameStreetComps.length >= 3
+                  ? equity.sameStreetComps
+                  : equity.refinedComps.length >= 3
+                    ? equity.refinedComps
+                    : equity.comps
+            }
             subjectPsf={equity.subjectPsf}
           />
         </section>

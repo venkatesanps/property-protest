@@ -57,7 +57,7 @@ async function extractPdfText(file: File): Promise<ParsedPdf> {
 
       // Ultra-simple text extraction: just concatenate
       const pageText = textContent.items
-        .map((item: any) => item.str || '')
+        .map((item) => ('str' in item ? item.str : ''))
         .join(' ');
 
       fullText += pageText + ' ';

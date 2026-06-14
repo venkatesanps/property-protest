@@ -81,11 +81,13 @@ export interface EquityResult {
   /** indicatedImprovementValue + indicatedLandValue — total via the split method. */
   indicatedValueSplit: number | null;
   // ── same-street comps (most directly comparable when available) ──
-  /** Comps on the same street as the subject (parsed from address). */
+  /** All comps on the same street as the subject (parsed from address). */
   sameStreetComps: Comp[];
-  /** Median $/sqft of same-street comps, if 3+ available. */
+  /** Refined same-street comps: size ±20%, year ±12 (best matches on same street). */
+  refinedSameStreetComps: Comp[];
+  /** Median $/sqft of best same-street comps (refined if 3+ available, else all same-street). */
   sameStreetMedianPsf: number | null;
-  /** sameStreetMedianPsf × subject sqft — indicated value from same-street comps only. */
+  /** sameStreetMedianPsf × subject sqft — indicated value from best same-street comps. */
   indicatedValueSameStreet: number | null;
 }
 
