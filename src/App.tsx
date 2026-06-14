@@ -824,29 +824,38 @@ function Results({
               </div>
             )}
             <div>
-              <p className="font-medium text-slate-700">Settlement Targets</p>
-              <div className="mt-2 grid grid-cols-3 gap-3">
-                <div className="rounded bg-white/70 p-2 text-center">
-                  <p className="text-xs text-slate-500 font-medium">Ask (Your Appraisal Value)</p>
-                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.ask.toLocaleString()}</p>
-                  <p className="text-[10px] text-slate-500 mt-1">Opening position</p>
-                </div>
-                <div className="rounded bg-emerald-100/70 p-2 text-center">
-                  <p className="text-xs text-slate-700 font-medium">Target (Expected Settlement)</p>
-                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.target.toLocaleString()}</p>
-                  <p className="text-[10px] text-slate-600 mt-1">Most likely outcome</p>
+              <p className="font-medium text-slate-700">Settlement Negotiation Strategy</p>
+              <p className="mt-1 text-xs text-slate-600">
+                The CAD's current position is <strong>${cadEvidence?.currentAppraised.toLocaleString()}</strong>. Here's your negotiation range:
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded bg-slate-100 p-2 text-center">
+                  <p className="text-[10px] text-slate-600 font-medium">Their Opening</p>
+                  <p className="text-sm font-semibold text-slate-900">${cadEvidence?.currentAppraised.toLocaleString()}</p>
+                  <p className="text-[9px] text-slate-500 mt-1">Current appraisal</p>
                 </div>
                 <div className="rounded bg-white/70 p-2 text-center">
-                  <p className="text-xs text-slate-500 font-medium">Floor (Walk-Away Price)</p>
-                  <p className="text-lg font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.floor.toLocaleString()}</p>
-                  <p className="text-[10px] text-slate-500 mt-1">Don't accept below</p>
+                  <p className="text-[10px] text-slate-500 font-medium">Your Ask</p>
+                  <p className="text-sm font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.ask.toLocaleString()}</p>
+                  <p className="text-[9px] text-slate-500 mt-1">Your strongest comps</p>
+                </div>
+                <div className="rounded bg-emerald-100 p-2 text-center">
+                  <p className="text-[10px] text-emerald-700 font-medium">Likely Target</p>
+                  <p className="text-sm font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.target.toLocaleString()}</p>
+                  <p className="text-[9px] text-emerald-600 mt-1">Expected settlement</p>
+                </div>
+                <div className="rounded bg-white/70 p-2 text-center">
+                  <p className="text-[10px] text-slate-500 font-medium">Your Floor</p>
+                  <p className="text-sm font-semibold text-emerald-700">${cadAnalysis.recommendedStrategy.settlementTargets.floor.toLocaleString()}</p>
+                  <p className="text-[9px] text-slate-500 mt-1">Minimum acceptable</p>
                 </div>
               </div>
               <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 space-y-1">
                 <p>
-                  <strong>How this works:</strong> ARB negotiates between your "ask" (your strongest
-                  comparable value) and their appraised value. The "target" is typically 60% of the
-                  reduction you're seeking (county-specific). Never accept below "floor."
+                  <strong>How this works:</strong> You open with your "ask" (strongest comparable value). ARB negotiates between your ask and their current appraisal. The "target" is where ARB typically settles (usually 60% of the gap). Never accept below your "floor."
+                </p>
+                <p className="text-[11px] mt-2">
+                  <strong>Gap:</strong> ${(cadEvidence?.currentAppraised ?? 0 - cadAnalysis.recommendedStrategy.settlementTargets.ask).toLocaleString()} difference between their appraisal and your ask.
                 </p>
               </div>
             </div>
