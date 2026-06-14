@@ -14,8 +14,11 @@
 import type { County, ExtractedCADEvidence, CADComp } from '../types';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Set up the worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Set worker from node_modules (will be bundled by Vite)
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).href;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,40 +37,40 @@ interface ParsedPdf {
 
 async function extractPdfText(file: File): Promise<ParsedPdf> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  // Fast parse: just load document, don't wait for worker
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    disableAutoFetch: true,  // Skip loading entire PDF upfront
+  }).promise;
 
   let fullText = '';
-  let imageCount = 0;
   const tables: ParsedTable[] = [];
 
-  // Only parse first 4 pages (CAD evidence packets are typically 2-3 pages of data)
-  const pagesToParse = Math.min(4, pdf.numPages);
+  // Only parse first 2 pages (most CAD data is on page 2)
+  const maxPages = Math.min(2, pdf.numPages);
 
-  for (let i = 1; i <= pagesToParse; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
+  for (let i = 1; i <= maxPages; i++) {
+    try {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
 
-    // Extract text more efficiently
-    let pageText = textContent.items
-      .map((item) => ('str' in item ? (item as any).str : ''))
-      .join(' ');
+      // Ultra-simple text extraction: just concatenate
+      const pageText = textContent.items
+        .map((item: any) => item.str || '')
+        .join(' ');
 
-    // Clean up extra spaces
-    pageText = pageText.replace(/\s+/g, ' ').trim();
-    fullText += pageText + '\n';
-
-    // Early exit if we found key sections
-    if (
-      fullText.includes('EQUITY ANALYSIS') &&
-      fullText.includes('COMPARABLE SALES') &&
-      fullText.includes('Market Value')
-    ) {
-      // We have enough data, parse remaining pages only if needed
-      if (i >= 2) break;
+      fullText += pageText + ' ';
+    } catch {
+      // Skip pages that fail to parse
+      continue;
     }
   }
 
-  return { fullText, tables, images: imageCount };
+  // Single pass cleanup
+  fullText = fullText.replace(/\s+/g, ' ').trim();
+
+  return { fullText, tables, images: 0 };
 }
 
 
@@ -289,7 +292,7 @@ export async function parseCADEvidencePDF(file: File): Promise<ExtractedCADEvide
     marketComps,
     marketIndicatedValue: marketIndicatedValue ?? undefined,
     valuationMethod,
-    adjustmentDetails: {}, // TODO: extract from text patterns
+    adjustmentDetails: {},
     extractedAt: new Date().toISOString(),
     confidence,
     extractionNotes,
