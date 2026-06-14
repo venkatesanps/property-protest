@@ -20,6 +20,10 @@ export interface SubjectProperty {
   homesteadCapAmount: number | null;
   landValue: number;
   improvementValue: number;
+  /** Lot size in square feet (Collin only; null when the county omits it). */
+  lotSizeSqft: number | null;
+  /** Whether the CAD record flags a pool (Collin only; null when not published). */
+  hasPool: boolean | null;
   priorYearValue: number | null;
   /** Tax year of the appraisal roll the values came from (null if unknown). */
   rollYear: number | null;

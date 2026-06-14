@@ -103,6 +103,9 @@ function toSubject(f: ArcGisFeature): SubjectProperty {
     homesteadCapAmount: a.ownerHSTaxLimitationValue == null ? null : n(a.ownerHSTaxLimitationValue),
     landValue: n(a.landHSValue) + n(a.landNHSValue),
     improvementValue: n(a.improvementValue),
+    // Denton's ArcGIS service does not expose lot size or a pool flag here.
+    lotSizeSqft: null,
+    hasPool: null,
     priorYearValue: null,
     // The ArcGIS service serves the live roll and updates in place; the current
     // tax year's values appear as DCAD loads them.

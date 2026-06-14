@@ -110,6 +110,9 @@ function toSubject(f: ArcGisFeature): SubjectProperty {
     homesteadCapAmount: null,
     landValue: n(a.landmarketvalue),
     improvementValue: n(a.improvementmarketvalue),
+    // TADMap's parcel layer does not expose lot size or a pool flag here.
+    lotSizeSqft: null,
+    hasPool: null,
     priorYearValue: null,
     rollYear: a.taxyear ?? null,
     rollLabel: 'Tarrant CAD live roll',

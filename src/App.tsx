@@ -10,7 +10,7 @@ import {
 } from './pdf/packet';
 import { fmtUSD, fmtNum, fmtPsf } from './format';
 import { adjustToToday } from './adapters/hpi';
-import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason } from './constants';
+import { DISCLAIMER, PROTEST_DEADLINE, COMPTROLLER_FORM, protestSeason, countyInfo } from './constants';
 import { getZipTrend } from './adapters/redfinTrend';
 import { CADEvidenceUpload } from './components/CADEvidenceUpload';
 import { BulkCompsModal } from './components/BulkCompsModal';
@@ -603,6 +603,24 @@ function Results({
             value={capFloor.floor != null ? fmtUSD(capFloor.floor) : 'n/a'}
           />
         </div>
+        {(subject.lotSizeSqft != null || subject.hasPool != null) && (
+          <div className="mt-3 grid grid-cols-2 gap-5 sm:grid-cols-4">
+            {subject.lotSizeSqft != null && (
+              <Stat
+                label="Lot size"
+                value={`${fmtNum(subject.lotSizeSqft)} sqft`}
+                help="Land area on the CAD record. Larger or smaller lots than your comps can justify a land-value adjustment."
+              />
+            )}
+            {subject.hasPool != null && (
+              <Stat
+                label="Pool"
+                value={subject.hasPool ? 'Yes' : 'No'}
+                help="Whether the CAD record flags a pool. A pool the comps lack (or vice-versa) is grounds for an equity adjustment."
+              />
+            )}
+          </div>
+        )}
         {capFloor.available && capFloor.isCapped && (
           <Note tone="info">
             Your homestead 10% cap holds the taxable value at {fmtUSD(capFloor.floor ?? 0)} — below
@@ -637,7 +655,7 @@ function Results({
           <Note tone="info">
             Tarrant CAD publishes market values only. The homestead cap (10%/yr) and net
             appraised value are not available here — check your notice or{' '}
-            <a href="https://tarrant.prodigycad.com/property-search" target="_blank" rel="noreferrer"
+            <a href={countyInfo('tarrant').propertySearchUrl} target="_blank" rel="noreferrer"
                className="underline">tarrant.prodigycad.com</a> for your exact taxable value.
           </Note>
         )}

@@ -14,7 +14,15 @@
 import { rgb } from 'pdf-lib';
 import type { AnalysisResult } from '../engine/run';
 import { getZipTrend } from '../adapters/redfinTrend';
-import { COMPTROLLER_FORM, PROTEST_DEADLINE, DISCLAIMER, TAX_RATE, protestSeason } from '../constants';
+import {
+  COMPTROLLER_FORM,
+  PROTEST_DEADLINE,
+  DISCLAIMER,
+  protestSeason,
+  countyInfo,
+  countyLabel,
+  countyTaxRate,
+} from '../constants';
 import { fmtUSD, fmtNum, fmtPsf } from '../format';
 import {
   createDoc,
@@ -33,12 +41,6 @@ import {
 const SUBTITLE = rgb(0.7, 0.78, 0.85);
 const EMERALD_BG = rgb(0.9, 0.96, 0.93);
 const AMBER_BG = rgb(0.99, 0.96, 0.86);
-
-function countyLabel(county: string): string {
-  if (county === 'collin') return 'Collin County (CCAD)';
-  if (county === 'tarrant') return 'Tarrant County (TAD)';
-  return 'Denton County (DCAD)';
-}
 
 /** Numbers + arguments derived once, shared by both packets. */
 function derive(result: AnalysisResult) {
@@ -64,7 +66,8 @@ function derive(result: AnalysisResult) {
   // Open the conversation a touch below the ask so there is room to settle.
   const opening = requested != null ? Math.round((requested * 0.96) / 1000) * 1000 : null;
   const reduction = requested != null ? Math.max(0, Math.round(floor - requested)) : null;
-  const savings = reduction != null ? Math.round(reduction * TAX_RATE) : null;
+  const savings =
+    reduction != null ? Math.round(reduction * countyTaxRate(subject.county)) : null;
 
   // ── Plain-English talking points, strongest first. ──
   const points: string[] = [];
@@ -232,6 +235,8 @@ export async function generateBoardPacket(result: AnalysisResult): Promise<Uint8
   b.kv('Living area (sqft)', fmtNum(subject.livingAreaSqft));
   b.kv('Year built', subject.yearBuilt ? String(subject.yearBuilt) : 'n/a');
   b.kv('Quality class', subject.qualityClass || 'n/a');
+  if (subject.lotSizeSqft != null) b.kv('Lot size (sqft)', fmtNum(subject.lotSizeSqft));
+  if (subject.hasPool != null) b.kv('Pool', subject.hasPool ? 'Yes' : 'No');
   b.kv('Neighborhood code', subject.neighborhoodCode || 'n/a');
   b.kv('Current appraised value', fmtUSD(subject.appraisedValue), NAVY);
   b.kv('Current market value', fmtUSD(subject.marketValue));
@@ -528,10 +533,11 @@ export async function generatePersonalPacket(result: AnalysisResult): Promise<Ui
 
   // ── How it works ──
   b.heading('How the Protest Works (3 steps)');
+  const info = countyInfo(subject.county);
   const fileStep =
     protestSeason().phase === 'filing'
-      ? `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. Check BOTH boxes: "over market value" and "unequal appraisal."`
-      : `1. FILE. The regular ${PROTEST_DEADLINE} deadline has passed. If you have not filed, you may still submit Form ${COMPTROLLER_FORM} as a LATE protest for good cause (Tex. Tax Code 41.44(b)) until the ARB approves the records, or pursue a Sec. 25.25 correction motion. If you already filed, skip to step 2. Check BOTH boxes: "over market value" and "unequal appraisal."`;
+      ? `1. FILE. Submit Comptroller Form ${COMPTROLLER_FORM} (Notice of Protest) to ${countyLabel(subject.county)} by ${PROTEST_DEADLINE}, or within 30 days of your appraisal notice - whichever is later. ${info.cadName} typically mails notices in ${info.noticesMailedTypical}; file online or check your account at ${info.onlineProtestUrl}. Check BOTH boxes: "over market value" and "unequal appraisal."`
+      : `1. FILE. The regular ${PROTEST_DEADLINE} deadline has passed. If you have not filed, you may still submit Form ${COMPTROLLER_FORM} as a LATE protest for good cause (Tex. Tax Code 41.44(b)) until the ARB approves the records, or pursue a Sec. 25.25 correction motion. If you already filed, skip to step 2. ${info.cadName} portal: ${info.onlineProtestUrl}. Check BOTH boxes: "over market value" and "unequal appraisal."`;
   const steps = [
     fileStep,
     '2. INFORMAL MEETING. Most cases settle here. You meet one-on-one with a district appraiser, show your evidence, and they often make an offer on the spot. If the offer is close to your number, you can accept and you are done.',

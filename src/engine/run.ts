@@ -188,7 +188,7 @@ export async function runAnalysis(opts: RunOptions): Promise<AnalysisResult> {
   // (or raw) value is what the verdict treats as market evidence.
   let purchase: PurchaseEvidence | null = null;
   if (opts.recentPurchasePrice && opts.recentPurchasePrice > 0) {
-    const hpi = adjustToToday(opts.recentPurchasePrice, opts.recentPurchaseDate);
+    const hpi = adjustToToday(opts.recentPurchasePrice, opts.recentPurchaseDate, subject.county);
     purchase = {
       price: Math.round(opts.recentPurchasePrice),
       date: opts.recentPurchaseDate ?? null,
