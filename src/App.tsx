@@ -1052,6 +1052,9 @@ function HowItWorks() {
         <p className="mt-1 text-sm text-slate-500">
           The analysis is grounded in Texas property tax law, not guesswork.
         </p>
+        <p className="mt-2 text-sm text-emerald-700 font-medium">
+          💡 <strong>Pro tip:</strong> Add your own comparable sales (especially same-street homes) for even stronger evidence. See "Add comparable sales" button above.
+        </p>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -1062,13 +1065,13 @@ function HowItWorks() {
         />
         <HowCard
           step="2"
-          title="We find every neighbor in your appraisal neighborhood"
-          body="Each county assigns homes to appraisal neighborhoods — groups of similar properties the district uses to set values uniformly. We pull all residential properties in yours and filter to homes within ±40% of your square footage and same quality class for an apples-to-apples comparison."
+          title="We analyze comparable properties (yours or county's)"
+          body="You can add your own comparables (especially same-street homes — strongest legal argument) using the bulk paste button above, OR we automatically find comparable homes in your appraisal neighborhood — properties the district uses to set values uniformly. We filter to homes within ±40% of your square footage and same quality class for an apples-to-apples comparison."
         />
         <HowCard
           step="3"
           title="We calculate the median $/sqft"
-          body="For each comparable home we compute its appraisal per square foot. Then we take the median of that group. The median is what matters legally — it is the fairness benchmark Texas law requires."
+          body="For each comparable home we compute its appraisal per square foot. Then we take the median of that group. The median is what matters legally — it is the fairness benchmark Texas law requires. Same-street comps typically have lower $/sqft, strengthening your argument."
         />
         <HowCard
           step="4"
@@ -1087,7 +1090,7 @@ function HowItWorks() {
         <HowCard
           step="6"
           title="We generate two ready-to-use documents"
-          body="The board evidence packet is formatted for filing with the Appraisal Review Board — it states your legal argument, lists your comparables, and shows the indicated value. The personal playbook coaches you on what to say at the hearing."
+          body="The board evidence packet is formatted for filing with the Appraisal Review Board — it states your legal argument, lists your comparables (yours or county's), and shows the indicated value. The personal playbook coaches you on what to say at the hearing, with specific rebuttals for ARB objections."
         />
       </div>
 
