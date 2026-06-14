@@ -14,8 +14,13 @@ export function median(nums: number[]): number {
 }
 
 function extractStreet(address: string): string {
-  // Extract street name (before ","). E.g. "1069 ANGEL FALLS DR" from "1069 ANGEL FALLS DR, FRISCO, TX"
-  return address.split(',')[0].trim();
+  // Extract street name without house number.
+  // E.g. "ANGEL FALLS DR" from "1069 ANGEL FALLS DR, FRISCO, TX"
+  // or "ANGEL FALLS DR" from "1069 ANGEL FALLS DR"
+  const beforeComma = address.split(',')[0].trim();
+  // Remove leading house number: "1069 ANGEL FALLS DR" -> "ANGEL FALLS DR"
+  const withoutNumber = beforeComma.replace(/^\d+\s+/, '').trim();
+  return withoutNumber;
 }
 
 export function computeEquity(subject: SubjectProperty, comps: Comp[]): EquityResult | null {
